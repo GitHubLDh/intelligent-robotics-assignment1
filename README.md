@@ -22,38 +22,10 @@ localization, no memory of past targets.
 
 ## One-time setup (every team member does this on their own machine)
 
-These are personal machine installs — not part of this repo, not shareable.
-**ROS2 only really works natively on Ubuntu**, so what you install depends on
-your OS:
-
-- **Already on Ubuntu 24.04**: install directly, see below.
-- **Windows**: use WSL2 with an Ubuntu 24.04 guest, then install as below
-  *inside* that WSL2 Ubuntu. Moodle → "Troubleshooting ROS 2 and Gazebo
-  Installation" has a PDF specifically for WSL + GPU setup — use that, don't
-  improvise.
-- **macOS (Apple Silicon)**: ROS2 doesn't run natively here either — Moodle
-  has a PDF on setting up a Virtual Machine (UTM) running Ubuntu, then
-  install as below *inside* that VM.
-
-Once you're on an actual (or virtualized) Ubuntu 24.04:
-
-1. Install **ROS2 Jazzy**: https://docs.ros.org/en/jazzy/Installation.html
-2. Install **Webots**: https://cyberbotics.com/
-3. Install the ROS2–Webots bridge:
-   ```bash
-   sudo apt install ros-jazzy-webots-ros2
-   ```
-4. Make sure you can run:
-   ```bash
-   source /opt/ros/jazzy/setup.bash
-   ros2 launch webots_ros2_epuck robot_launch.py
-   ```
-   and see Webots open with a robot in it. If this doesn't work, fix it before touching this repo — see Moodle's ROS2/Gazebo troubleshooting PDFs.
-
-If you're on ROS2 Humble + Gazebo Fortress instead of Jazzy (older Moodle
-links use this), swap `jazzy` for `humble` everywhere above and ask the rest
-of the team whether that's actually compatible with this repo before relying
-on it — this project was built and tested against Jazzy.
+Not part of this repo, not shareable — each person installs ROS2 Jazzy +
+Webots + the ROS2-Webots bridge on their own machine (see Moodle for
+OS-specific install/troubleshooting instructions). Verify your install works
+with a basic Webots + ROS2 demo before cloning this repo.
 
 ## Getting the project onto your machine
 
