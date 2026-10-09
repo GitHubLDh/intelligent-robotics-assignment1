@@ -22,10 +22,12 @@ localization, no memory of past targets.
 
 ## One-time setup (every team member does this on their own machine)
 
-Not part of this repo, not shareable — each person installs ROS2 Jazzy +
-Webots + the ROS2-Webots bridge on their own machine (see Moodle for
-OS-specific install/troubleshooting instructions). Verify your install works
-with a basic Webots + ROS2 demo before cloning this repo.
+Make sure you can run:
+```bash
+source /opt/ros/jazzy/setup.bash
+ros2 launch webots_ros2_epuck robot_launch.py
+```
+and see Webots open with a robot in it.
 
 ## Getting the project onto your machine
 
