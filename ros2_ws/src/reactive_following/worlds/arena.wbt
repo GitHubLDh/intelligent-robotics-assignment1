@@ -1,0 +1,115 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/develop/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/develop/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/develop/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/develop/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+
+WorldInfo {
+  info [
+    "Reactive following with five e-puck robots (Intelligent Robotics, Assignment 1)."
+  ]
+  title "Reactive Following Arena"
+  basicTimeStep 32
+}
+Viewpoint {
+  orientation -0.30 0.60 0.74 1.35
+  position -1.4 -1.7 1.8
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 3 3
+}
+E-puck {
+  translation 0 0.6 0.001
+  rotation 0 0 1 0
+  name "R1"
+  controller "<extern>"
+  version "2"
+  turretSlot [
+    Lidar {
+      name "lidar"
+      fieldOfView 1.745329
+      horizontalResolution 100
+      numberOfLayers 1
+      near 0.01
+      minRange 0.02
+      maxRange 4.0
+    }
+  ]
+}
+E-puck {
+  translation 0.570634 0.185410 0.001
+  rotation 0 0 1 -1.256637
+  name "R2"
+  controller "<extern>"
+  version "2"
+  turretSlot [
+    Lidar {
+      name "lidar"
+      fieldOfView 1.745329
+      horizontalResolution 100
+      numberOfLayers 1
+      near 0.01
+      minRange 0.02
+      maxRange 4.0
+    }
+  ]
+}
+E-puck {
+  translation 0.352671 -0.485410 0.001
+  rotation 0 0 1 -2.513274
+  name "R3"
+  controller "<extern>"
+  version "2"
+  turretSlot [
+    Lidar {
+      name "lidar"
+      fieldOfView 1.745329
+      horizontalResolution 100
+      numberOfLayers 1
+      near 0.01
+      minRange 0.02
+      maxRange 4.0
+    }
+  ]
+}
+E-puck {
+  translation -0.352671 -0.485410 0.001
+  rotation 0 0 1 2.513274
+  name "R4"
+  controller "<extern>"
+  version "2"
+  turretSlot [
+    Lidar {
+      name "lidar"
+      fieldOfView 1.745329
+      horizontalResolution 100
+      numberOfLayers 1
+      near 0.01
+      minRange 0.02
+      maxRange 4.0
+    }
+  ]
+}
+E-puck {
+  translation -0.570634 0.185410 0.001
+  rotation 0 0 1 1.256637
+  name "R5"
+  controller "<extern>"
+  version "2"
+  turretSlot [
+    Lidar {
+      name "lidar"
+      fieldOfView 1.745329
+      horizontalResolution 100
+      numberOfLayers 1
+      near 0.01
+      minRange 0.02
+      maxRange 4.0
+    }
+  ]
+}

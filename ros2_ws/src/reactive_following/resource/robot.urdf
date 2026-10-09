@@ -1,0 +1,6 @@
+<?xml version="1.0" ?>
+<robot name="reactive_following_robot">
+    <webots>
+        <plugin type="reactive_following.reactive_driver.ReactiveFollowingDriver" />
+    </webots>
+</robot>

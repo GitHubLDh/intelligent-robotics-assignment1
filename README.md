@@ -22,9 +22,22 @@ localization, no memory of past targets.
 
 ## One-time setup (every team member does this on their own machine)
 
-These are personal machine installs — not part of this repo, not shareable:
+These are personal machine installs — not part of this repo, not shareable.
+**ROS2 only really works natively on Ubuntu**, so what you install depends on
+your OS:
 
-1. Install **ROS2 Jazzy** (Ubuntu 24.04): https://docs.ros.org/en/jazzy/Installation.html
+- **Already on Ubuntu 24.04**: install directly, see below.
+- **Windows**: use WSL2 with an Ubuntu 24.04 guest, then install as below
+  *inside* that WSL2 Ubuntu. Moodle → "Troubleshooting ROS 2 and Gazebo
+  Installation" has a PDF specifically for WSL + GPU setup — use that, don't
+  improvise.
+- **macOS (Apple Silicon)**: ROS2 doesn't run natively here either — Moodle
+  has a PDF on setting up a Virtual Machine (UTM) running Ubuntu, then
+  install as below *inside* that VM.
+
+Once you're on an actual (or virtualized) Ubuntu 24.04:
+
+1. Install **ROS2 Jazzy**: https://docs.ros.org/en/jazzy/Installation.html
 2. Install **Webots**: https://cyberbotics.com/
 3. Install the ROS2–Webots bridge:
    ```bash
@@ -36,6 +49,11 @@ These are personal machine installs — not part of this repo, not shareable:
    ros2 launch webots_ros2_epuck robot_launch.py
    ```
    and see Webots open with a robot in it. If this doesn't work, fix it before touching this repo — see Moodle's ROS2/Gazebo troubleshooting PDFs.
+
+If you're on ROS2 Humble + Gazebo Fortress instead of Jazzy (older Moodle
+links use this), swap `jazzy` for `humble` everywhere above and ask the rest
+of the team whether that's actually compatible with this repo before relying
+on it — this project was built and tested against Jazzy.
 
 ## Getting the project onto your machine
 
@@ -69,10 +87,15 @@ source install/setup.bash
 
 ## Running
 
-TODO — fill in once the first launch file exists, e.g.:
 ```bash
 ros2 launch reactive_following five_robots_launch.py
 ```
+
+Opens Webots with 5 e-puck robots, each running its own instance of the
+controller in `reactive_following/reactive_driver.py`. Note: the actual
+reactive-following logic in that file is still a stub (`step()` has a
+`TODO`) — right now the robots just drive their own fixed curves and ignore
+each other.
 
 ## Workflow / contributing
 
