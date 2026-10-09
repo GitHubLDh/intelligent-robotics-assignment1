@@ -39,19 +39,30 @@ These are personal machine installs — not part of this repo, not shareable:
 
 ## Getting the project onto your machine
 
+Clone this repo wherever you like on your machine — there's no required location.
+
 ```bash
-mkdir -p ~/ros2_ws/src
-cd ~/ros2_ws/src
 git clone git@github.com:GitHubLDh/intelligent-robotics-assignment1.git
-ln -s ~/ros2_ws/src/intelligent-robotics-assignment1/ros2_ws/src/reactive_following ~/ros2_ws/src/reactive_following
 ```
 
-The symlink is what lets `colcon` (which only looks in `~/ros2_ws/src`) find the
-package, while the actual files/git history live inside the cloned repo folder.
+`colcon` (the ROS2 build tool) only looks for packages inside `~/ros2_ws/src/`,
+but your clone can live anywhere. So the one thing you need is a **symlink**
+inside `~/ros2_ws/src/` that points at the `reactive_following` folder in
+*your* clone — this makes colcon see the package without copying any files:
+
+```bash
+mkdir -p ~/ros2_ws/src
+ln -s /absolute/path/to/your/clone/ros2_ws/src/reactive_following ~/ros2_ws/src/reactive_following
+```
+
+Replace `/absolute/path/to/your/clone` with wherever you actually cloned the
+repo (run `pwd` inside it to get the exact path). Already have a `ros2_ws`
+elsewhere, or use a different workspace name entirely? Fine — just symlink
+into whatever `src/` folder your `colcon build` command targets.
 
 Build it:
 ```bash
-cd ~/ros2_ws
+cd ~/ros2_ws   # or wherever your workspace is
 colcon build --packages-select reactive_following
 source install/setup.bash
 ```
