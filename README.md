@@ -90,4 +90,5 @@ ros2 launch reactive_following five_robots_launch.py
 ## Team
 
 - Lara Dehandschutter
-- TODO: add teammates
+- Lennert De Rouck
+- Pedro Cancela
