@@ -1,0 +1,22 @@
+# ROS2 colcon workspace build artifacts (regenerated locally, never commit)
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Webots
+*.wbproj
+
+# Large media — keep out of git, share via Drive/Moodle instead
+*.mp4
+*.mov
+*.avi
