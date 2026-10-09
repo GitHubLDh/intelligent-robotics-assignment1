@@ -20,42 +20,13 @@ localization, no memory of past targets.
 └── demo_video/                       # video script/notes (the actual .mp4 is NOT committed here — see below)
 ```
 
-## One-time setup (every team member does this on their own machine)
-
-Make sure you can run:
-```bash
-source /opt/ros/<your-distro>/setup.bash
-ros2 launch webots_ros2_epuck robot_launch.py
-```
-and see Webots open with a robot in it.
 
 ## Getting the project onto your machine
 
-Clone this repo wherever you like on your machine — there's no required location.
-
 ```bash
 git clone git@github.com:GitHubLDh/intelligent-robotics-assignment1.git
-```
-
-`colcon` (the ROS2 build tool) only looks for packages inside `~/ros2_ws/src/`,
-but your clone can live anywhere. So the one thing you need is a **symlink**
-inside `~/ros2_ws/src/` that points at the `reactive_following` folder in
-*your* clone — this makes colcon see the package without copying any files:
-
-```bash
-mkdir -p ~/ros2_ws/src
-ln -s /absolute/path/to/your/clone/ros2_ws/src/reactive_following ~/ros2_ws/src/reactive_following
-```
-
-Replace `/absolute/path/to/your/clone` with wherever you actually cloned the
-repo (run `pwd` inside it to get the exact path). Already have a `ros2_ws`
-elsewhere, or use a different workspace name entirely? Fine — just symlink
-into whatever `src/` folder your `colcon build` command targets.
-
-Build it:
-```bash
-cd ~/ros2_ws   # or wherever your workspace is
-colcon build --packages-select reactive_following
+cd intelligent-robotics-assignment1/ros2_ws
+colcon build
 source install/setup.bash
 ```
 
