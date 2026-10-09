@@ -24,7 +24,7 @@ localization, no memory of past targets.
 
 Make sure you can run:
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/<your-distro>/setup.bash
 ros2 launch webots_ros2_epuck robot_launch.py
 ```
 and see Webots open with a robot in it.
