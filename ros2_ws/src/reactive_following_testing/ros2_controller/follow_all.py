@@ -1,0 +1,144 @@
+"""Step 5: independent reactive followers R1-R5 in a single ROS 2 process.
+
+Each robot has its own Node, subscriptions, state and configuration, using
+only its front camera's current nearest-visible-robot distance and bearing.
+There is no robot-to-robot messaging, GPS, map, target history or coordination.
+"""
+
+import argparse
+import json
+import math
+from pathlib import Path
+import time
+
+import rclpy
+from geometry_msgs.msg import Twist, Vector3Stamped
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from std_msgs.msg import Bool, String
+
+from follow_logic import ControlParameters, command_for_detection
+
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "robots.json"
+SENSOR_TIMEOUT_S = 0.45
+
+
+def load_config(path=CONFIG_PATH):
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    names = {f"R{i}" for i in range(1, 6)}
+    if set(data) != names:
+        raise ValueError(f"Configuration must contain exactly {sorted(names)}")
+    result = {}
+    for name, values in data.items():
+        cfg = ControlParameters(**values)
+        if not (0 < cfg.forward_speed <= 0.25 and
+                -cfg.max_angular_speed <= cfg.base_angular_speed <= cfg.max_angular_speed and
+                0 <= cfg.steering_gain <= 10 and
+                0 < cfg.max_angular_speed <= 2.0 and
+                all(math.isfinite(v) for v in vars(cfg).values())):
+            raise ValueError(f"Invalid controller settings for {name}: {values}")
+        result[name] = cfg
+    return result
+
+
+class ReactiveFollower(Node):
+    def __init__(self, robot_name, cfg):
+        super().__init__(f"{robot_name.lower()}_reactive_follower")
+        self.robot_name = robot_name
+        self.cfg = cfg
+        self.visible = False
+        self.bearing_rad = None
+        self.distance_m = None
+        self.last_visible_time = None
+        self.last_target_time = None
+        self.last_mode = None
+        self.last_status_at = 0.0
+        ns = f"/{robot_name}"
+
+        self.create_subscription(Bool, f"{ns}/target_visible", self.on_visible, 10)
+        self.create_subscription(Vector3Stamped, f"{ns}/target", self.on_target, 10)
+        self.velocity_pub = self.create_publisher(Twist, f"{ns}/cmd_vel", 10)
+        self.mode_pub = self.create_publisher(String, f"{ns}/follow_mode", 10)
+        self.create_timer(0.1, self.on_tick)
+        self.get_logger().info(
+            f"{robot_name}: v={cfg.forward_speed:.2f} m/s, "
+            f"base w={cfg.base_angular_speed:+.2f} rad/s, Kp={cfg.steering_gain:.2f}")
+
+    def on_visible(self, msg):
+        self.visible = bool(msg.data)
+        self.last_visible_time = time.monotonic()
+        if not self.visible:
+            self.bearing_rad = None
+            self.distance_m = None
+            self.last_target_time = None
+
+    def on_target(self, msg):
+        if msg.header.frame_id != f"{self.robot_name}/front_camera":
+            return
+        self.bearing_rad = float(msg.vector.y)
+        self.distance_m = float(msg.vector.x)
+        self.last_target_time = time.monotonic()
+
+    def on_tick(self):
+        now = time.monotonic()
+        fresh_visible = (self.visible and self.last_visible_time is not None
+                         and now - self.last_visible_time < SENSOR_TIMEOUT_S)
+        fresh_target = (self.last_target_time is not None
+                        and now - self.last_target_time < SENSOR_TIMEOUT_S)
+        can_follow = fresh_visible and fresh_target and self.distance_m is not None
+        v, w, mode = command_for_detection(
+            can_follow, self.bearing_rad if can_follow else None, self.cfg)
+        msg = Twist()
+        msg.linear.x = v
+        msg.angular.z = w
+        self.velocity_pub.publish(msg)
+        self.mode_pub.publish(String(data=mode))
+        if mode != self.last_mode:
+            self.last_mode = mode
+            self.get_logger().info(f"{self.robot_name} mode: {mode}")
+        if mode == "FOLLOW" and now - self.last_status_at >= 3.0:
+            self.last_status_at = now
+            self.get_logger().info(
+                f"{self.robot_name} target range={self.distance_m:.2f} m, "
+                f"bearing={math.degrees(self.bearing_rad):+.1f} deg, "
+                f"turn={w:+.2f} rad/s")
+
+    def stop(self):
+        self.velocity_pub.publish(Twist())
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run independent R1-R5 reactive followers")
+    parser.add_argument("--robots", nargs="+", choices=[f"R{i}" for i in range(1, 6)],
+                        default=[f"R{i}" for i in range(1, 6)],
+                        help="Subset to start, e.g. --robots R1 R2 (default: all)")
+    args = parser.parse_args()
+    configs = load_config()
+
+    rclpy.init()
+    executor = SingleThreadedExecutor()
+    nodes = []
+    try:
+        for name in dict.fromkeys(args.robots):
+            node = ReactiveFollower(name, configs[name])
+            nodes.append(node)
+            executor.add_node(node)
+        print("Autonomous followers running: " + ", ".join(n.robot_name for n in nodes), flush=True)
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for node in nodes:
+            node.stop()
+        # Give the executor a short chance to flush zero-velocity messages.
+        # Even if these are missed, the bridge and Webots have deadman timers.
+        for node in nodes:
+            executor.remove_node(node)
+            node.destroy_node()
+        executor.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
