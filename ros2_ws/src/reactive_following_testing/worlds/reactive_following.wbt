@@ -7,8 +7,8 @@ WorldInfo {
   coordinateSystem "ENU"
 }
 Viewpoint {
-  orientation 1 0 0 0.82
-  position 0 -7.7 8.4
+  orientation 1 0 0 0.85
+  position 0 -11.0 12.0
 }
 Background {
   skyColor [ 0.67 0.75 0.83 ]
@@ -19,7 +19,7 @@ DirectionalLight {
   ambientIntensity 0.4
 }
 
-# Flat 6 x 6 meter floor: top surface at z=0.
+# Flat 10 x 10 meter floor: top surface at z=0.
 Solid {
   translation 0 0 -0.05
   name "floor"
@@ -30,7 +30,7 @@ Solid {
         roughness 1
         metalness 0
       }
-      geometry DEF FLOOR_BOX Box { size 6 6 0.1 }
+      geometry DEF FLOOR_BOX Box { size 10 10 0.1 }
     }
   ]
   boundingObject USE FLOOR_BOX
@@ -38,7 +38,7 @@ Solid {
 
 # Perimeter walls: 0.24 m high, 0.12 m thick.
 Solid {
-  translation 0 2.94 0.12
+  translation 0 4.94 0.12
   name "north_wall"
   children [
     DEF PERIMETER_WALL_SHAPE Shape {
@@ -47,19 +47,19 @@ Solid {
         roughness 0.95
         metalness 0
       }
-      geometry DEF WALL_NS Box { size 6 0.12 0.24 }
+      geometry DEF WALL_NS Box { size 10 0.12 0.24 }
     }
   ]
   boundingObject USE WALL_NS
 }
 Solid {
-  translation 0 -2.94 0.12
+  translation 0 -4.94 0.12
   name "south_wall"
   children [ USE PERIMETER_WALL_SHAPE ]
   boundingObject USE WALL_NS
 }
 Solid {
-  translation 2.94 0 0.12
+  translation 4.94 0 0.12
   name "east_wall"
   children [
     DEF WALL_EW_SHAPE Shape {
@@ -67,66 +67,16 @@ Solid {
         baseColor 0.60 0.65 0.70
         roughness 0.95
       }
-      geometry DEF WALL_EW Box { size 0.12 5.76 0.24 }
+      geometry DEF WALL_EW Box { size 0.12 9.76 0.24 }
     }
   ]
   boundingObject USE WALL_EW
 }
 Solid {
-  translation -2.94 0 0.12
+  translation -4.94 0 0.12
   name "west_wall"
   children [ USE WALL_EW_SHAPE ]
   boundingObject USE WALL_EW
-}
-
-# Four short walls make following less predictable by causing occlusion
-# and obstructing trajectories. Remove these for a clean baseline.
-Solid {
-  translation 0.1 0.65 0.095
-  rotation 0 0 1 0.33
-  name "inner_wall_A"
-  children [
-    Shape {
-      appearance PBRAppearance { baseColor 0.77 0.47 0.27 roughness 0.9 }
-      geometry DEF SHORT_WALL_A Box { size 1.25 0.12 0.19 }
-    }
-  ]
-  boundingObject USE SHORT_WALL_A
-}
-Solid {
-  translation -1.35 -0.56 0.095
-  rotation 0 0 1 -0.75
-  name "inner_wall_B"
-  children [
-    Shape {
-      appearance PBRAppearance { baseColor 0.77 0.47 0.27 roughness 0.9 }
-      geometry DEF SHORT_WALL_B Box { size 0.85 0.12 0.19 }
-    }
-  ]
-  boundingObject USE SHORT_WALL_B
-}
-Solid {
-  translation 1.55 -0.58 0.095
-  rotation 0 0 1 0.52
-  name "inner_wall_C"
-  children [
-    Shape {
-      appearance PBRAppearance { baseColor 0.77 0.47 0.27 roughness 0.9 }
-      geometry DEF SHORT_WALL_C Box { size 1.1 0.12 0.19 }
-    }
-  ]
-  boundingObject USE SHORT_WALL_C
-}
-Solid {
-  translation 0 -1.90 0.095
-  name "inner_wall_D"
-  children [
-    Shape {
-      appearance PBRAppearance { baseColor 0.77 0.47 0.27 roughness 0.9 }
-      geometry DEF SHORT_WALL_D Box { size 0.80 0.12 0.19 }
-    }
-  ]
-  boundingObject USE SHORT_WALL_D
 }
 
 # Five instances of the same PROTO with independent identity and pose.

@@ -87,7 +87,11 @@ class ReactiveFollower(Node):
                         and now - self.last_target_time < SENSOR_TIMEOUT_S)
         can_follow = fresh_visible and fresh_target and self.distance_m is not None
         v, w, mode = command_for_detection(
-            can_follow, self.bearing_rad if can_follow else None, self.cfg)
+            can_follow,
+            self.bearing_rad if can_follow else None,
+            self.cfg,
+            distance_m=self.distance_m if can_follow else None,
+        )
         msg = Twist()
         msg.linear.x = v
         msg.angular.z = w

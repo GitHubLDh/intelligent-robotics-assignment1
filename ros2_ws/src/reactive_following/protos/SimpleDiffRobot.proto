@@ -1,0 +1,143 @@
+#VRML_SIM R2023b utf8
+# Simple differential-drive robot for FEUP reactive following assignment.
+# Visible geometry: 1 cylindrical body and 2 cylindrical wheels.
+# Local forward direction: +X. Lateral direction: +/-Y. Up: +Z.
+
+PROTO SimpleDiffRobot [
+  field SFVec3f translation 0 0 0.085
+  field SFRotation rotation 0 0 1 0
+  field SFString name "R1"
+  field SFString controller "<none>"
+  field SFColor bodyColor 0.13 0.70 0.93
+  field MFNode debugVisual []  # Optional non-physical visualization geometry
+]
+{
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    model "simple_diff_robot"
+    controller IS controller
+    recognitionColors [ 0.85 0.85 0.85 ]
+    children [
+      DEF BODY Shape {
+        appearance PBRAppearance {
+          baseColor IS bodyColor
+          metalness 0
+          roughness 0.65
+        }
+        geometry Cylinder {
+          radius 0.115
+          height 0.080
+          subdivision 32
+        }
+      }
+      # Front-facing recognition camera: 4 m range, 100 deg horizontal FOV.
+      # Camera is slightly ahead of the body so the chassis does not block it.
+      # Confirm the recognition API is accepted as local sensing by lecturer.
+      Camera {
+        translation 0.130 0 0.005
+        name "front_camera"
+        fieldOfView 1.745329252
+        width 320
+        height 160
+        near 0.01
+        far 4
+        recognition Recognition {
+          maxRange 4
+          occlusion 2
+        }
+      }
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 0.125 -0.030
+        }
+        device [
+          RotationalMotor {
+            name "left_wheel_motor"
+            maxVelocity 12
+            maxTorque 1.5
+          }
+        ]
+        endPoint Solid {
+          translation 0 0.125 -0.030
+          rotation 1 0 0 1.570796327
+          name "left_wheel"
+          children [
+            DEF WHEEL_SHAPE Shape {
+              appearance PBRAppearance {
+                baseColor 0.07 0.08 0.10
+                metalness 0
+                roughness 0.95
+              }
+              geometry DEF WHEEL_GEOMETRY Cylinder {
+                radius 0.055
+                height 0.028
+                subdivision 24
+              }
+            }
+          ]
+          boundingObject USE WHEEL_GEOMETRY
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 -0.125 -0.030
+        }
+        device [
+          RotationalMotor {
+            name "right_wheel_motor"
+            maxVelocity 12
+            maxTorque 1.5
+          }
+        ]
+        endPoint Solid {
+          translation 0 -0.125 -0.030
+          rotation 1 0 0 1.570796327
+          name "right_wheel"
+          children [
+            USE WHEEL_SHAPE
+          ]
+          boundingObject USE WHEEL_GEOMETRY
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      # Optional floor-level FOV wireframe: no boundingObject or physics.
+      # This is visualization only, not a camera detection or obstacle sensor.
+      Pose {
+        children IS debugVisual
+      }
+    ]
+    # A small, invisible rear contact sphere adds 3-point support, preventing
+    # the two-wheeled body from falling over. No extra visible wheel is added.
+    boundingObject Group {
+      children [
+        Cylinder {
+          radius 0.115
+          height 0.080
+          subdivision 32
+        }
+        Pose {
+          translation -0.080 0 -0.062
+          children [
+            Sphere { radius 0.019 }
+          ]
+        }
+      ]
+    }
+    physics Physics {
+      density -1
+      mass 0.65
+      centerOfMass [ 0 0 -0.018 ]
+    }
+  }
+}

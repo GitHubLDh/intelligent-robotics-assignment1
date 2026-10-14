@@ -16,6 +16,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         (os.path.join('share', package_name, 'worlds'), glob('worlds/*.wbt')),
         (os.path.join('share', package_name, 'protos'), glob('protos/*.proto')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +31,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'bridge = reactive_following.bridge_all:main',
+            'follower = reactive_following.follow_all:main',
         ],
     },
 )
