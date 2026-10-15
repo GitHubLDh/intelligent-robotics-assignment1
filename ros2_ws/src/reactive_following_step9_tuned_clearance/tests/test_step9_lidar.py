@@ -11,7 +11,8 @@ for p in [ROOT / 'controllers' / 'udp_diff_driver', ROOT / 'ros2_bridge', ROOT /
 from lidar_scan import combine_layers
 from sensor_packet import sensor_packet
 from sensor_snapshot import parse_snapshot
-from safe_logic import SafeParameters, lidar_sectors, safe_command, beam_angle
+from safe_logic import (SafeParameters, beam_angle, collision_recovery_command,
+                        lidar_sectors, safe_command)
 
 
 def synthetic(default=2.5, **points):
@@ -120,7 +121,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(m,'FOLLOW')
         self.assertGreater(v,self.cfg.forward_speed)
     def test_hold_stopped(self):
-        self.assertEqual(self.go(green=(.57,.06)),(0,0,'FOLLOW_HOLD'))
+        self.assertEqual(self.go(green=(.29,.06)),(0,0,'FOLLOW_HOLD'))
     def test_side_wall_avoid(self):
         v,w,m=self.go(obstacle(-math.pi/2,.20))
         self.assertIn(m,('AVOID_SIDE','ESCAPE_SIDE'))
@@ -149,7 +150,7 @@ class ControllerTests(unittest.TestCase):
         v,w,m=self.go(obstacle(0,.28),green=(1.1,0))
         self.assertNotIn(m,('FOLLOW','FOLLOW_ALIGN','FOLLOW_HOLD'))
     def test_close_green_hold_no_swivel(self):
-        v,w,m=self.go(obstacle(0,.46),green=(.55,.12))
+        v,w,m=self.go(obstacle(0,.46),green=(.29,.12))
         self.assertEqual((v,w,m),(0,0,'FOLLOW_HOLD'))
     def test_camera_edge_realign(self):
         v,w,m=self.go(green=(1.5,.79))
@@ -159,6 +160,13 @@ class ControllerTests(unittest.TestCase):
         v,w,m=self.go(obstacle(0,.72))
         self.assertEqual(m,'BASE_CLEAR_BLEND')
         self.assertLess(v,self.cfg.forward_speed)
+
+    def test_collision_recovery_backs_off_then_waits(self):
+        self.assertEqual(collision_recovery_command(1.1, 1.2, 1.8),
+                         (-.10, 0.0, 'COLLISION_BACKOFF'))
+        self.assertEqual(collision_recovery_command(1.3, 1.2, 1.8),
+                         (0.0, 0.0, 'COLLISION_WAIT'))
+        self.assertIsNone(collision_recovery_command(1.9, 1.2, 1.8))
 
 
 class ConfigTests(unittest.TestCase):

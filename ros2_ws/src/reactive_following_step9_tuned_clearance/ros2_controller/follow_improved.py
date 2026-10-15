@@ -6,6 +6,7 @@ controllers neither publish nor subscribe to other robots' topics.
 import argparse
 import json
 import math
+import random
 from pathlib import Path
 import time
 
@@ -14,7 +15,8 @@ from geometry_msgs.msg import Twist, Vector3Stamped
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool, String, Float64, Float64MultiArray
-from safe_logic import SafeParameters, safe_command
+from safe_logic import (COLLISION_BACKOFF_S, SafeParameters,
+                        collision_recovery_command, safe_command)
 from sensor_snapshot import parse_snapshot
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "robots.json"
@@ -55,9 +57,13 @@ class SafeFollower(Node):
         self.local_snapshot = None
         self.last_snapshot_at = None
         self.last_mode = None
+        self.contact_active = False
+        self.collision_backoff_until = 0.0
+        self.collision_restart_at = 0.0
         ns = "/"+name
         self.create_subscription(Float64MultiArray, ns+"/local_sensors",
                                  self.on_local_sensors, 10)
+        self.create_subscription(Bool, ns+"/contact", self.on_contact, 10)
         self.cmd_pub = self.create_publisher(Twist, ns+"/cmd_vel", 10)
         self.mode_pub = self.create_publisher(String, ns+"/follow_mode", 10)
         # Communication diagnostic only; never used for navigation decisions.
@@ -69,8 +75,24 @@ class SafeFollower(Node):
         self.local_snapshot = parse_snapshot(msg.data)
         self.last_snapshot_at = time.monotonic()
 
+    def on_contact(self, msg):
+        active = bool(msg.data)
+        if active and not self.contact_active:
+            now = time.monotonic()
+            self.collision_backoff_until = now + COLLISION_BACKOFF_S
+            self.collision_restart_at = (self.collision_backoff_until +
+                                         random.uniform(0.0, 1.0))
+        self.contact_active = active
+
     def on_tick(self):
         now = time.monotonic()
+        if (self.contact_active and self.collision_restart_at > 0.0 and
+                now >= self.collision_restart_at):
+            # Do not resume normal following into a still-active contact.
+            # Repeat the recovery cycle until the bumper clears.
+            self.collision_backoff_until = now + COLLISION_BACKOFF_S
+            self.collision_restart_at = (self.collision_backoff_until +
+                                         random.uniform(0.0, 1.0))
         if self.last_snapshot_at is None:
             health = "NO_SNAPSHOT"
         elif now - self.last_snapshot_at > FRESH_S:
@@ -80,7 +102,11 @@ class SafeFollower(Node):
         else:
             health = "OK"
         self.sensor_health_pub.publish(String(data=health))
-        if health != "OK":
+        recovery = collision_recovery_command(
+            now, self.collision_backoff_until, self.collision_restart_at)
+        if recovery is not None:
+            v, w, mode = recovery
+        elif health != "OK":
             v, w, mode = 0.0, 0.0, "SENSOR_FAILSAFE"
         else:
             rear_d, rear_b, front_d, front_b, ranges = self.local_snapshot

@@ -69,7 +69,7 @@ class StatelessRecoveryTests(unittest.TestCase):
         self.assertEqual((v, w, mode), (0., 0., 'SENSOR_FAILSAFE'))
 
     def test_rear_mark_hold_not_changed(self):
-        v, w, mode = safe_command(.56, .03, None, None,
+        v, w, mode = safe_command(.285, .03, None, None,
                                   sample(front=2.5), self.cfg)
         self.assertEqual((v, w, mode), (0., 0., 'FOLLOW_HOLD'))
 

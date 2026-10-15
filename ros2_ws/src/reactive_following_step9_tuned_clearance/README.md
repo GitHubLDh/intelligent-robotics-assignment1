@@ -48,6 +48,8 @@ never by robot identity. None of the diagnostic fields is used for steering.
   than straight reverse, provided LiDAR shows room for the footprint.
 - Reserve reversing for a physically constrained pivot with clear rear AND
   rear-diagonal LiDAR sectors.
+- On a bumper contact, back off at 0.10 m/s for 0.5 seconds, then wait a random
+  0–1 seconds before resuming. If contact remains active, repeat recovery.
 - Keep the tested head-on, corner, follow/hold priorities otherwise intact.
 - Emergency contact-range LiDAR readings still result in reverse if necessary
   and safe, or a full stop if no motion is safe.

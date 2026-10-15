@@ -1,4 +1,4 @@
-# Step 9.9 — Faster, closer obstacle avoidance
+# Step 9.9 — Closer, softer obstacle avoidance
 
 This tuning addresses the Webots observation that R2 escapes corners but stops too far from the walls and turns too slowly. Derived from Step 9.8; the camera classifier, Webots robot, LiDAR mount and UDP bridge are unchanged.
 
@@ -6,9 +6,9 @@ This tuning addresses the Webots observation that R2 escapes corners but stops t
 
 - Early stop/turn zone reduced from 1.20m to 0.88m (requires a nearby diagonal obstruction too).
 - Pocket/corner preemption now requires closer obstacles (~0.72m rather than ~0.95m).
-- LiDAR slowdown starts at 0.82m rather than 1.00m; front hard avoidance at 0.52m rather than 0.58m. These are LiDAR-origin distances, not free space outside the chassis.
-- Normal obstacle turning rate rises from 0.80rad/s (46°/s) to 1.05rad/s (60°/s). Moving clearance arcs use up to 0.075m/s at -0.85rad/s instead of 0.035m/s at -0.45rad/s.
-- The blended return to each robot's original base curvature now operates at 0.77–1.10m instead of 1.10–1.55m.
+- LiDAR slowdown starts at 0.73m; front hard avoidance starts at 0.50m. These are LiDAR-origin distances, not free space outside the chassis.
+- Normal obstacle turning uses 0.40rad/s (23°/s), including moving clearance arcs, so robots turn less sharply while preserving the deterministic right-hand escape direction.
+- The blended return to each robot's original base curvature remains at 0.77–1.10m, while the lower LiDAR gates allow a closer approach before avoidance takes over.
 - Emergency thresholds (0.28m) and reverse protections are unchanged. No global pose, remembered target or heading, or supervisor data is used.
 
 ## Test

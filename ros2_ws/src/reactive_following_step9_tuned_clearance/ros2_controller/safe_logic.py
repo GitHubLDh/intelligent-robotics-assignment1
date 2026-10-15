@@ -9,10 +9,21 @@ import math
 
 N_BEAMS = 360
 RANGE_MAX = 2.5
+COLLISION_BACKOFF_S = 0.50
+COLLISION_BACKOFF_SPEED = -0.10
 
 
 def clamp(v, lo, hi):
     return min(hi, max(lo, v))
+
+
+def collision_recovery_command(now, backoff_until, restart_at):
+    """Return a collision recovery command, or None when recovery is done."""
+    if now < backoff_until:
+        return COLLISION_BACKOFF_SPEED, 0.0, 'COLLISION_BACKOFF'
+    if now < restart_at:
+        return 0.0, 0.0, 'COLLISION_WAIT'
+    return None
 
 
 @dataclass(frozen=True)
@@ -22,7 +33,7 @@ class SafeParameters:
     base_angular_speed: float = -0.20
     steering_gain: float = 2.6
     max_angular_speed: float = 1.1
-    desired_rear_range: float = 0.55
+    desired_rear_range: float = 0.275
     hold_tolerance: float = 0.06
     distance_gain: float = 0.65
     tracking_max_turn_speed: float = 0.85
@@ -30,9 +41,9 @@ class SafeParameters:
     head_on_range: float = 0.70
     head_on_turn_speed: float = 0.95
     head_on_reverse_turn_speed: float = 0.60
-    avoid_angular_speed: float = 1.05
-    lidar_slow_range: float = 0.82
-    lidar_front_avoid: float = 0.52
+    avoid_angular_speed: float = 0.75
+    lidar_slow_range: float = 0.73
+    lidar_front_avoid: float = 0.50
     lidar_emergency: float = 0.28
     lidar_side_avoid: float = 0.28
     lidar_rear_reverse_clear: float = 0.55
@@ -236,7 +247,7 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
         # A centre pivot or backoff is still preferred in cramped geometry.
         if f > .62 and min(fl, fr) > .47 and min(l, r) > .30:
             arc_v = min(.075, max(0.0, .45 * (f - cfg.lidar_front_avoid)))
-            return arc_v, -.85, 'CLEAR_FORWARD_ARC'
+            return arc_v, escape_w, 'CLEAR_FORWARD_ARC'
         return 0.0, escape_w, 'CLEAR_FORWARD_TURN'
 
     # If a narrow obstacle remains close in front after its green marker has
@@ -276,7 +287,7 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
     near = min(f, fl, fr)
     if near < 1.10:
         weight = clamp((near - .77) / .33, 0.0, 1.0)
-        w = (1.0-weight) * (-.85) + weight * cfg.base_angular_speed
+        w = (1.0-weight) * escape_w + weight * cfg.base_angular_speed
         return v, w, 'BASE_CLEAR_BLEND'
     return v, clamp(cfg.base_angular_speed, -cfg.max_angular_speed,
                     cfg.max_angular_speed), 'BASE_CURVE_SLOW' if v < cfg.forward_speed else 'BASE_CURVE'
