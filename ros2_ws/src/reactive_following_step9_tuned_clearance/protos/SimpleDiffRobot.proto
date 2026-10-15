@@ -1,0 +1,253 @@
+#VRML_SIM R2023b utf8
+# Simple differential-drive robot for FEUP reactive following assignment.
+# Visible geometry: 1 cylindrical body and 2 cylindrical wheels.
+# Local forward direction: +X. Lateral direction: +/-Y. Up: +Z.
+
+PROTO SimpleDiffRobot [
+  field SFVec3f translation 0 0 0.085
+  field SFRotation rotation 0 0 1 0
+  field SFString name "R1"
+  field SFString controller "<none>"
+  field SFColor bodyColor 0.13 0.70 0.93
+  field MFNode debugVisual []  # Optional non-physical visualization geometry
+]
+{
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    model "simple_diff_robot"
+    contactMaterial "body_support"
+    controller IS controller
+    recognitionColors [ 0.85 0.85 0.85 ]
+    children [
+      DEF BODY Shape {
+        appearance PBRAppearance {
+          baseColor IS bodyColor
+          metalness 0
+          roughness 0.65
+        }
+        geometry Cylinder {
+          radius 0.115
+          height 0.080
+          subdivision 32
+        }
+      }
+      # Front-facing recognition camera: 4 m range, 100 deg horizontal FOV.
+      # Camera is slightly ahead of the body so the chassis does not block it.
+      # Confirm the recognition API is accepted as local sensing by lecturer.
+      Camera {
+        translation 0.130 0 0.005
+        name "front_camera"
+        fieldOfView 1.745329252
+        width 320
+        height 160
+        near 0.01
+        far 4
+        recognition Recognition {
+          maxRange 4
+          occlusion 2
+        }
+      }
+      # Directional recognition markers. Thin bright face + larger opaque black
+      # backing: the colored face is exposed only outwards, not around edges.
+      # Geometry is inside the original bumper envelope and does not modify
+      # physical contacts, LiDAR position or physics. Webots Recognition may
+      # still return hidden marker volumes; perception.py also classifies each
+      # candidate relative to the CURRENT camera-observed robot body.
+      Pose {
+        translation 0.119 0 0.005
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.015 0.018 0.025
+              roughness 1
+              metalness 0
+            }
+            geometry Box { size 0.009 0.112 0.063 }
+          }
+        ]
+      }
+      Solid {
+        translation 0.126 0 0.005
+        name "front_red_mark"
+        model "front_marker"
+        recognitionColors [ 1 0 0 ]
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 1 0.04 0.04
+              emissiveColor 0.8 0 0
+              metalness 0
+              roughness 0.6
+            }
+            geometry Box { size 0.002 0.088 0.046 }
+          }
+        ]
+      }
+      Pose {
+        translation -0.119 0 0.005
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.015 0.018 0.025
+              roughness 1
+              metalness 0
+            }
+            geometry Box { size 0.009 0.112 0.063 }
+          }
+        ]
+      }
+      Solid {
+        translation -0.126 0 0.005
+        name "rear_green_mark"
+        model "rear_marker"
+        recognitionColors [ 0 1 0 ]
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.02 1 0.09
+              emissiveColor 0 0.8 0.03
+              metalness 0
+              roughness 0.6
+            }
+            geometry Box { size 0.002 0.088 0.046 }
+          }
+        ]
+      }
+      # Three-layer 360-degree LiDAR: current, local range readings only.
+      # LiDAR plane at z=0.155m (robot origin z=0.085 + local 0.070).
+      # With +/-0.04rad vertical layers, lowest rear ray at 0.12m
+      # is above the green rear marker (top approximately z=0.130m).
+      # It remains below the arena's 0.19m low walls at close range.
+      # This avoids likely self-returns without masking arbitrary near-range
+      # scan samples, which could hide a genuine close obstacle.
+      # World-space z assumes robot is upright on level ground.
+      Lidar {
+        translation 0 0 0.070
+        name "safety_lidar"
+        projection "cylindrical"
+        type "fixed"
+        fieldOfView 6.283185307
+        horizontalResolution 360
+        numberOfLayers 3
+        verticalFieldOfView 0.08
+        near 0.01
+        minRange 0.05
+        maxRange 2.5
+      }
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 0.125 -0.030
+        }
+        device [
+          RotationalMotor {
+            name "left_wheel_motor"
+            maxVelocity 12
+            acceleration 5
+            maxTorque 1.5
+          }
+        ]
+        endPoint Solid {
+          translation 0 0.125 -0.030
+          rotation 1 0 0 1.570796327
+          name "left_wheel"
+          contactMaterial "wheel_rubber"
+          children [
+            DEF WHEEL_SHAPE Shape {
+              appearance PBRAppearance {
+                baseColor 0.07 0.08 0.10
+                metalness 0
+                roughness 0.95
+              }
+              geometry DEF WHEEL_GEOMETRY Cylinder {
+                radius 0.055
+                height 0.028
+                subdivision 24
+              }
+            }
+          ]
+          boundingObject USE WHEEL_GEOMETRY
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 -0.125 -0.030
+        }
+        device [
+          RotationalMotor {
+            name "right_wheel_motor"
+            maxVelocity 12
+            acceleration 5
+            maxTorque 1.5
+          }
+        ]
+        endPoint Solid {
+          translation 0 -0.125 -0.030
+          rotation 1 0 0 1.570796327
+          name "right_wheel"
+          contactMaterial "wheel_rubber"
+          children [
+            USE WHEEL_SHAPE
+          ]
+          boundingObject USE WHEEL_GEOMETRY
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      # Invisible bumper for experimental contact-episode counting only.
+      # Centered above the floor to avoid counting ground contact.
+      # Radius 0.146 m slightly exceeds the chassis/wheel outer envelope;
+      # collisions are sensed locally, never using global coordinates.
+      TouchSensor {
+        name "collision_bumper"
+        contactMaterial "body_support"
+        type "bumper"
+        boundingObject Cylinder {
+          radius 0.146
+          height 0.045
+          subdivision 24
+        }
+      }
+      # Optional floor-level FOV wireframe: no boundingObject or physics.
+      # This is visualization only, not a camera detection or obstacle sensor.
+      Pose {
+        children IS debugVisual
+      }
+    ]
+    # Two passive front/rear anti-tip contacts; 2mm resting clearance avoids
+    # fighting the powered wheel contacts and reduces frictional wobble.
+    # No orientation forcing or privileged sensing.
+    boundingObject Group {
+      children [
+        Cylinder {
+          radius 0.115
+          height 0.080
+          subdivision 32
+        }
+        Pose {
+          translation -0.090 0 -0.067
+          children [ Sphere { radius 0.016 } ]
+        }
+        Pose {
+          translation 0.090 0 -0.067
+          children [ Sphere { radius 0.016 } ]
+        }
+      ]
+    }
+    physics Physics {
+      density -1
+      mass 0.65
+      centerOfMass [ 0 0 -0.038 ]
+      damping Damping { linear 0.15 angular 0.28 }
+    }
+  }
+}

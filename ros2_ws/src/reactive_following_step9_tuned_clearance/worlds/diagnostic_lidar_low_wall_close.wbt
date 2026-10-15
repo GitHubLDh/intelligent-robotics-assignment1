@@ -1,0 +1,26 @@
+#VRML_SIM R2023b utf8
+EXTERNPROTO "../protos/SimpleDiffRobot.proto"
+WorldInfo { title "Step 9.2 19cm low wall close-range LiDAR diagnostic" basicTimeStep 32 coordinateSystem "ENU" }
+Viewpoint { orientation 1 0 0 0.82 position 0 -3.8 3.2 }
+Background { skyColor [ 0.67 0.75 0.83 ] }
+DirectionalLight { direction 0.35 0.5 -1 intensity 1.2 ambientIntensity 0.5 }
+Solid {
+  translation 0 0 -0.05 name "floor" contactMaterial "floor"
+  children [ Shape { appearance PBRAppearance { baseColor 0.19 0.23 0.27 roughness 1 }
+    geometry DEF FLOOR Box { size 6 6 0.1 } } ]
+  boundingObject USE FLOOR
+}
+# Top is only 0.19m above floor, equal to short walls in the full arena.
+# Near face: x=0.40m from robot center. Robot stays stationary.
+Solid {
+  translation 0.46 0 0.095 name "low_wall_19cm"
+  children [ Shape {
+    appearance PBRAppearance { baseColor 0.95 0.60 0.20 roughness 0.8 }
+    geometry DEF LOW_WALL Box { size 0.12 1.2 0.19 }
+  } ]
+  boundingObject USE LOW_WALL
+}
+SimpleDiffRobot {
+  translation 0 0 0.085 rotation 0 0 1 0 name "R1"
+  controller "udp_diff_driver" bodyColor 0.10 0.72 0.95
+}
