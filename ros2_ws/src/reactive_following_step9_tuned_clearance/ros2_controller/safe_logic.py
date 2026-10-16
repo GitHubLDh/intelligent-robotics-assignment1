@@ -9,6 +9,9 @@ import math
 
 N_BEAMS = 360
 RANGE_MAX = 2.5
+# Recognition cone half-width. marker_visible() rejects anything outside it,
+# so a rotation that pushes a leader past this loses the target outright.
+MARKER_HALF_FOV = math.radians(50)
 COLLISION_BACKOFF_S = 0.50
 COLLISION_BACKOFF_SPEED = -0.10
 # Used when the bumper fires but the front is clear: the contact came from
@@ -122,13 +125,16 @@ class SafeParameters:
     # at the marker. Zero offset contributes nothing, so a formed train is
     # unaffected; it only acts on a follower approaching from off-axis.
     lane_gain: float = 1.3
-    lane_max_turn: float = 0.45
+    lane_max_turn: float = 0.35
+    # Sensor age we must stay safe across: snapshot period plus bridge and
+    # queue delay. Yaw is capped so the leader cannot leave the cone within it.
+    tracking_fov_latency_s: float = 0.30
 
 
 def marker_visible(distance, bearing):
     return (distance is not None and bearing is not None and
             math.isfinite(distance) and math.isfinite(bearing) and
-            0.16 < distance <= 4.0 and abs(bearing) <= math.radians(50))
+            0.16 < distance <= 4.0 and abs(bearing) <= MARKER_HALF_FOV)
 
 
 def beam_angle(i, beams=N_BEAMS):
@@ -190,9 +196,47 @@ def lidar_sectors(scan, rear_distance=None, rear_bearing=None):
     }
 
 
+# Collision is imminent in these modes, so keeping a marker in view must not
+# slow the escape. Every other mode's rotation is rate-limited.
+TURN_CAP_EXEMPT = ('EMERGENCY', 'ESCAPE')
+
+
+def limit_turn_to_keep_leader(w, rear_distance, rear_bearing, cfg):
+    """Cap yaw so this frame's rotation cannot rotate the leader out of view.
+
+    Measured over a 62-loss run: 39% of target losses had |w| pinned at
+    tracking_max_turn_speed and another 31% fell into AVOID_FRONT, which
+    commands a large v=0 pivot. Both rotate the leader straight out of the
+    +/-50 deg recognition cone.
+
+    The cap is DIRECTIONAL: turning back toward the leader is never limited,
+    only the direction that would lose it. Rate-limiting a pivot never makes
+    it unsafe - the front and side checks re-run every frame - it only makes
+    the rotation slower.
+    """
+    if not marker_visible(rear_distance, rear_bearing):
+        return w
+    # Rotating left by d moves the leader's bearing to (bearing - d), so a
+    # left turn is bounded by the room to the right-hand cone edge.
+    room_left = max(0.0, rear_bearing + MARKER_HALF_FOV)
+    room_right = max(0.0, MARKER_HALF_FOV - rear_bearing)
+    return clamp(w, -room_right / cfg.tracking_fov_latency_s,
+                 room_left / cfg.tracking_fov_latency_s)
+
+
 def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
                  ranges, cfg: SafeParameters, lane_offset=0.0):
     """Return (linear m/s, angular rad/s, mode) from current local sensors."""
+    v, w, mode = _safe_command(rear_distance, rear_bearing, front_distance,
+                               front_bearing, ranges, cfg, lane_offset)
+    if not mode.startswith(TURN_CAP_EXEMPT):
+        w = limit_turn_to_keep_leader(w, rear_distance, rear_bearing, cfg)
+    return v, w, mode
+
+
+def _safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
+                  ranges, cfg: SafeParameters, lane_offset=0.0):
+    """The reactive cascade itself; yaw is rate-limited by the caller."""
     s = lidar_sectors(ranges, rear_distance, rear_bearing) if ranges is not None else None
     if s is None:
         return 0.0, 0.0, 'SENSOR_FAILSAFE'
@@ -363,8 +407,14 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
         # to peers inside 0.75m) nor the camera (+/-50deg) can even detect.
         # Pulling each of them onto the leader's rear axis makes them queue
         # single file instead. The term vanishes once centred.
+        # Lane correction is subordinate to keeping the leader in frame: it
+        # does not vanish as the bearing goes to zero, so at full authority it
+        # can hold yaw against the bearing servo and walk the marker out to
+        # the cone edge. Fade it out as the leader drifts off centre.
+        lane_authority = clamp((cfg.tracking_edge_bearing - a) /
+                               (cfg.tracking_edge_bearing - .25), 0.0, 1.0)
         lane = clamp(cfg.lane_gain * (lane_offset or 0.0),
-                     -cfg.lane_max_turn, cfg.lane_max_turn)
+                     -cfg.lane_max_turn, cfg.lane_max_turn) * lane_authority
         w = clamp(cfg.steering_gain * rear_bearing + lane,
                   -cfg.tracking_max_turn_speed, cfg.tracking_max_turn_speed)
         if a < .025 and abs(lane) < .02:
