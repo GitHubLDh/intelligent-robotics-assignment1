@@ -7,7 +7,9 @@
 #   ./run_trains.sh -- --steering-gain 0      # no following
 #   ./run_trains.sh -- --steering-gain 0.8    # weak turning
 #   ./run_trains.sh -- --steering-gain 2.6    # strong turning
-# Slide 8 extensions (off by default):  -- --avoid --slow
+# Slide 8 extensions:  -- --avoid --slow
+#   --constant-speed  spec-pure slide 4 baseline (no standoff: drives into
+#                     the leader, which is what the collision metric shows)
 
 set -e
 

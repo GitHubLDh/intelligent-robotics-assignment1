@@ -37,6 +37,15 @@ class FollowParameters:
     # Open-space wander when no robot is visible.
     base_angular_speed: float = -0.20
     # --- extensions, slide 8 ---
+    # Distance-dependent speed. The LiDAR sits above the other robots' bodies
+    # and cannot see a peer closer than ~0.75 m, so the standoff is driven by
+    # the CAMERA's measured range to the followed robot - the only sensor that
+    # reads robot distance at close quarters. On by default because without it
+    # the specified constant-speed behaviour simply drives into the leader;
+    # --constant-speed restores the spec-pure baseline for the comparisons.
+    keep_distance: bool = True
+    desired_distance: float = 0.45
+    approach_margin: float = 0.35
     avoid_enabled: bool = False
     avoid_range: float = 0.55
     avoid_turn_speed: float = 0.80
@@ -103,6 +112,14 @@ def follow_command(target_distance, target_bearing, ranges, cfg):
         # and steering_gain is the weak/strong knob the experiments compare.
         turn = clamp(cfg.steering_gain * target_bearing,
                      -cfg.max_angular_speed, cfg.max_angular_speed)
+        if cfg.keep_distance:
+            # Ease to a stop as the gap closes to desired_distance. Steering
+            # is untouched, so a held robot still tracks its leader and
+            # resumes the moment the leader pulls away.
+            gap = target_distance - cfg.desired_distance
+            speed *= clamp(gap / max(cfg.approach_margin, 1e-6), 0.0, 1.0)
+            if speed <= 0.005:
+                return 0.0, turn, 'FOLLOW_HOLD'
         return speed, turn, 'FOLLOW'
 
     # No robot in view: base curve. Also the specified response to a target

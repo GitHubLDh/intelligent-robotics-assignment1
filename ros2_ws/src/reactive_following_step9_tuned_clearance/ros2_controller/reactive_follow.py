@@ -78,7 +78,9 @@ class ReactiveFollower(Node):
         self.create_timer(0.05, self.on_tick)
         self.get_logger().info(
             f"{name}: reactive follower; v={cfg.forward_speed:.2f} "
-            f"gain={cfg.steering_gain:.2f} avoid={cfg.avoid_enabled}")
+            f"gain={cfg.steering_gain:.2f} "
+            f"standoff={cfg.desired_distance if cfg.keep_distance else None} "
+            f"avoid={cfg.avoid_enabled}")
 
     def on_local_sensors(self, msg):
         self.snapshot = parse_snapshot(msg.data)
@@ -104,12 +106,13 @@ class ReactiveFollower(Node):
             ranges = self.snapshot[-1]
             v, w, mode = follow_command(distance, bearing, ranges, self.cfg)
 
-        if mode == 'FOLLOW':
+        if mode in ('FOLLOW', 'FOLLOW_HOLD'):
             self.following_s += dt
             if bearing is not None:
                 self.bearing_error_sum += abs(bearing)
                 self.bearing_error_n += 1
-        if self.last_mode == 'FOLLOW' and mode != 'FOLLOW':
+        if (self.last_mode in ('FOLLOW', 'FOLLOW_HOLD')
+                and mode not in ('FOLLOW', 'FOLLOW_HOLD')):
             self.target_losses += 1
 
         msg = Twist()
@@ -149,7 +152,9 @@ def main():
     parser.add_argument("--avoid", action="store_true",
                         help="enable the frontal collision-avoidance extension")
     parser.add_argument("--slow", action="store_true",
-                        help="enable the distance-dependent speed extension")
+                        help="also ease off for walls using the LiDAR")
+    parser.add_argument("--constant-speed", action="store_true",
+                        help="spec-pure slide 4 baseline: no standoff at all")
     args = parser.parse_args()
     overrides = {}
     if args.steering_gain is not None:
@@ -158,6 +163,8 @@ def main():
         overrides["avoid_enabled"] = True
     if args.slow:
         overrides["slow_enabled"] = True
+    if args.constant_speed:
+        overrides["keep_distance"] = False
     cfg = load_config(overrides=overrides)
 
     rclpy.init()
