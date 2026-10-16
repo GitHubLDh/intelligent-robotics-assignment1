@@ -128,13 +128,18 @@ PROTO SimpleDiffRobot [
         name "safety_lidar"
         projection "cylindrical"
         type "fixed"
-        fieldOfView 6.283185307
+        # Frontal only: 100 deg horizontal, 4 m range, matching the camera
+        # and the assignment's allowed-sensor rule.
+        fieldOfView 1.745329252
         horizontalResolution 360
         numberOfLayers 3
-        verticalFieldOfView 0.08
+        # Narrowed from 0.08: at the new 4 m range the lower layer of a 0.08
+        # vertical FOV reaches the floor at 3.87 m and would report it as an
+        # obstacle. 0.04 puts the floor intersection at 7.75 m, beyond range.
+        verticalFieldOfView 0.04
         near 0.01
         minRange 0.05
-        maxRange 2.5
+        maxRange 4.0
       }
       HingeJoint {
         jointParameters HingeJointParameters {

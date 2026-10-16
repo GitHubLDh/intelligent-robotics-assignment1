@@ -104,7 +104,8 @@ def main():
                 continue
             last_tx = now
             observed = scan_markers(camera.getRecognitionObjects())
-            rear, front = observed['rear'], observed['front']
+            # The reactive controller follows the nearest visible robot.
+            rear, front = observed['nearest_robot'], observed['front']
             lidar_ranges = combine_layers(lidar.getRangeImage())
             telemetry = {
                 'type': 'target',

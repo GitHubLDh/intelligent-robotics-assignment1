@@ -1,13 +1,14 @@
-"""Webots 3-layer cylindrical LiDAR -> instantaneous 360-range local scan.
+"""Webots 3-layer FRONTAL LiDAR -> instantaneous 360-sample local scan.
 
-Beam order: index 0 = -pi (back/right edge), index 180 = robot +X
-(front), index 90 = right, and index 270 = left. Webots range-image
-layers are contiguous. No poses, target identities, or saved observations.
+100 deg horizontal field of view sampled by 360 beams, so index 0 is the
+right-hand edge (-50 deg), index 180 is straight ahead, and index 359 is the
+left-hand edge (+50 deg). Webots range-image layers are contiguous. No poses,
+target identities, or saved observations.
 """
 import math
 
 N_BEAMS = 360
-MAX_M = 2.5
+MAX_M = 4.0
 MIN_M = 0.05
 
 

@@ -252,7 +252,12 @@ def scan_markers(recognition_objects):
                 uncertain += 1
 
     target = choose_follow_target(green, bodies, red_bodies)
+    # Slide 4 names the target as the NEAREST VISIBLE ROBOT, so the reactive
+    # controller uses this directly. The marker-derived fields below are kept
+    # for diagnostics and for the oncoming-robot extension only.
+    nearest_robot = min(bodies, key=lambda b: b[3])[3:5] if bodies else None
     return {
+        'nearest_robot': nearest_robot,
         'rear': target[:2] if target else None,
         'lane_offset': target[2] if target else 0.0,
         'front': min(red) if red else None,
