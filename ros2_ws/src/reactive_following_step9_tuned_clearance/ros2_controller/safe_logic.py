@@ -17,6 +17,19 @@ COLLISION_BACKOFF_SPEED = -0.10
 # Used when the bumper fires but the front is clear: the contact came from
 # behind, so easing forward separates us where reversing would not.
 COLLISION_ADVANCE_SPEED = 0.06
+# Reverse used when the rear is only modestly clear. lidar_rear_reverse_clear
+# (0.55m) is the bar for a committed reverse; demanding it to ease back a few
+# centimetres is what left R1/R2 wedged for 153s with COLLISION_BACKOFF never
+# firing once.
+COLLISION_NUDGE_SPEED = -0.05
+COLLISION_NUDGE_REAR_M = 0.28
+COLLISION_NUDGE_DIAGONAL_M = 0.22
+# Last resort still translates. A circular robot pivoting in place does not
+# move its centre, so a pure rotation can never separate a contact.
+COLLISION_CREEP_SPEED = -0.03
+# Each failed retry lengthens the backoff and widens the turn instead of
+# repeating a manoeuvre that has already demonstrably failed.
+COLLISION_BACKOFF_MAX_S = 2.0
 
 
 def clamp(v, lo, hi):
@@ -24,7 +37,8 @@ def clamp(v, lo, hi):
 
 
 def collision_recovery_command(now, backoff_until, restart_at, turn=0.0,
-                               rear_clear=True, front_blocked=True):
+                               rear_clear=True, front_blocked=True,
+                               rear_nudge=True):
     """Return a collision recovery command, or None when recovery is done.
 
     `turn` is the robot's own reverse yaw. Reversing straight back left both
@@ -42,14 +56,19 @@ def collision_recovery_command(now, backoff_until, restart_at, turn=0.0,
             return COLLISION_ADVANCE_SPEED, turn, 'COLLISION_ADVANCE'
         if rear_clear:
             return COLLISION_BACKOFF_SPEED, turn, 'COLLISION_BACKOFF'
-        return 0.0, turn, 'COLLISION_TURN'
+        if rear_nudge:
+            return COLLISION_NUDGE_SPEED, turn, 'COLLISION_NUDGE'
+        # Boxed in. Still creep rather than pivot on the spot: rotating a
+        # circular footprint cannot break a contact, and the escalating
+        # duration/turn in the caller is what eventually frees a tie.
+        return COLLISION_CREEP_SPEED, turn, 'COLLISION_TURN'
     if now < restart_at:
         return 0.0, 0.0, 'COLLISION_WAIT'
     return None
 
 
 def contact_context(snapshot, cfg):
-    """(rear_clear, front_blocked) for collision recovery, from one snapshot.
+    """(rear_clear, front_blocked, rear_nudge) for recovery, from one snapshot.
 
     The LiDAR sits above the other robots' bodies and cannot see a peer closer
     than ~0.75m, so a robot in front is detected from the camera markers; the
@@ -57,11 +76,11 @@ def contact_context(snapshot, cfg):
     *behind* us, so rear_clear reflects walls only.
     """
     if snapshot is None:
-        return False, True          # fail closed: pivot, never reverse blind
+        return False, True, False   # fail closed: creep, never reverse blind
     rear_distance, rear_bearing, front_distance, front_bearing, _, ranges = snapshot
     s = lidar_sectors(ranges, rear_distance, rear_bearing) if ranges is not None else None
     if s is None:
-        return False, True
+        return False, True, False
     rear_clear = (s['rear'] > cfg.lidar_rear_reverse_clear and
                   s['rear_left'] > .33 and s['rear_right'] > .33)
     peer_in_front = (
@@ -69,7 +88,11 @@ def contact_context(snapshot, cfg):
          front_distance < cfg.head_on_range) or
         (marker_visible(rear_distance, rear_bearing) and
          rear_distance < cfg.head_on_range))
-    return rear_clear, peer_in_front or s['front'] < cfg.lidar_front_avoid
+    rear_nudge = (s['rear'] > COLLISION_NUDGE_REAR_M and
+                  s['rear_left'] > COLLISION_NUDGE_DIAGONAL_M and
+                  s['rear_right'] > COLLISION_NUDGE_DIAGONAL_M)
+    front_blocked = peer_in_front or s['front'] < cfg.lidar_front_avoid
+    return rear_clear, front_blocked, rear_nudge
 
 
 def recovery_signature(name):
