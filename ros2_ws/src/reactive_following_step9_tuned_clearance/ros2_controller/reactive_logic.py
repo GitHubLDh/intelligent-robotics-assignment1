@@ -55,6 +55,12 @@ class FollowParameters:
     very_close_distance: float = 0.45
     # Ahead must beat this for the coast to count as clear.
     coast_clear_range: float = 1.00
+    # Half-width of the cone that has to be free of red before we call the
+    # coast clear and drive off. The LiDAR sits above the other robots'
+    # bodies and cannot see a peer closer than ~0.75 m, so in a nose-to-nose
+    # contact it reports 4 m of open space; the camera is the only sensor
+    # that can see the robot we are touching.
+    coast_cone: float = 0.60
     # Acceleration limits, applied by the node.
     max_angular_accel: float = 2.5
     max_linear_accel: float = 0.60
@@ -101,9 +107,21 @@ def follow_command(green_distance, green_bearing,
     # 1. Facing us and very close. Turn until the way ahead is actually
     #    clear, then take it. Both robots turn right, so a head-on pair
     #    separates instead of mirroring each other.
+    #
+    #    "Clear" must mean clear to BOTH sensors. Checking only the LiDAR
+    #    made a nose-to-nose pair drive into each other at full speed
+    #    forever: a robot that close is invisible to the LiDAR, which
+    #    reported 4 m of open road. Rotating is what resolves it - our own
+    #    heading changes, so the red slides out of the forward cone even
+    #    though neither robot has moved - and then we leave along the gap.
+    red_in_cone = (red and red_distance < cfg.red_turn_distance
+                   and abs(red_bearing) <= cfg.coast_cone)
     if red_threatens and red_distance < cfg.very_close_distance:
-        if ahead < cfg.coast_clear_range:
-            return cfg.min_speed, right, 'ESCAPE_TURN'
+        if ahead < cfg.coast_clear_range or red_in_cone:
+            # No forward component: we are touching something, so creeping
+            # ahead only pushes. Rotation alone clears the cone, and it is
+            # bounded - roughly coast_cone / turn_speed of a second.
+            return 0.0, right, 'ESCAPE_TURN'
         return cfg.forward_speed, 0.0, 'ESCAPE_GO'
 
     # 2. Facing us, close but not yet critical: turn right.
