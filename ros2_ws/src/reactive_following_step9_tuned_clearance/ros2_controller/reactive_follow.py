@@ -86,8 +86,8 @@ class ReactiveFollower(Node):
         self.get_logger().info(
             f"{name}: reactive follower; v={cfg.forward_speed:.2f} "
             f"gain={cfg.steering_gain:.2f} "
-            f"standoff={cfg.desired_distance if cfg.keep_distance else None} "
-            f"avoid={cfg.avoid_enabled}")
+            f"follow<{cfg.follow_distance:.2f} standoff={cfg.desired_distance:.2f} "
+            f"red_turn<{cfg.red_turn_distance:.2f}")
 
     def on_local_sensors(self, msg):
         self.snapshot = parse_snapshot(msg.data)
@@ -169,22 +169,14 @@ def main():
     # Slide 7 compares identical initial conditions across turning strengths.
     parser.add_argument("--steering-gain", type=float,
                         help="override all robots: 0 = no following")
-    parser.add_argument("--avoid", action="store_true",
-                        help="enable the frontal collision-avoidance extension")
-    parser.add_argument("--slow", action="store_true",
-                        help="also ease off for walls using the LiDAR")
-    parser.add_argument("--constant-speed", action="store_true",
-                        help="spec-pure slide 4 baseline: no standoff at all")
+    parser.add_argument("--follow-distance", type=float,
+                        help="range within which a green back is followed")
     args = parser.parse_args()
     overrides = {}
     if args.steering_gain is not None:
         overrides["steering_gain"] = args.steering_gain
-    if args.avoid:
-        overrides["avoid_enabled"] = True
-    if args.slow:
-        overrides["slow_enabled"] = True
-    if args.constant_speed:
-        overrides["keep_distance"] = False
+    if args.follow_distance is not None:
+        overrides["follow_distance"] = args.follow_distance
     cfg = load_config(overrides=overrides)
 
     rclpy.init()
