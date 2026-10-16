@@ -103,8 +103,10 @@ class ReactiveFollower(Node):
             v, w, mode, bearing = 0.0, 0.0, "SENSOR_FAILSAFE", None
         else:
             distance, bearing = self.snapshot[0], self.snapshot[1]
+            oncoming_d, oncoming_b = self.snapshot[2], self.snapshot[3]
             ranges = self.snapshot[-1]
-            v, w, mode = follow_command(distance, bearing, ranges, self.cfg)
+            v, w, mode = follow_command(distance, bearing, ranges, self.cfg,
+                                        oncoming_d, oncoming_b)
 
         if mode in ('FOLLOW', 'FOLLOW_HOLD'):
             self.following_s += dt

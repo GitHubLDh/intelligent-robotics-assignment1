@@ -46,6 +46,13 @@ class FollowParameters:
     keep_distance: bool = True
     desired_distance: float = 0.45
     approach_margin: float = 0.35
+    # Holding station in front of a robot that is FACING us is a deadlock:
+    # neither robot loses the target, so neither ever resumes the base curve.
+    # Yield instead. Fixed clockwise, so both robots turn the same absolute
+    # direction and separate - a mirrored "turn away from its bearing" would
+    # have them turn opposite ways and converge again.
+    yield_speed: float = 0.06
+    yield_turn_speed: float = 0.70
     avoid_enabled: bool = False
     avoid_range: float = 0.55
     avoid_turn_speed: float = 0.80
@@ -84,8 +91,13 @@ def scan_sectors(scan):
     }
 
 
-def follow_command(target_distance, target_bearing, ranges, cfg):
-    """Return (linear m/s, angular rad/s, mode) for the current snapshot."""
+def follow_command(target_distance, target_bearing, ranges, cfg,
+                   oncoming_distance=None, oncoming_bearing=None):
+    """Return (linear m/s, angular rad/s, mode) for the current snapshot.
+
+    oncoming_* is the camera's front-marker reading: a robot whose FRONT faces
+    us, i.e. one driving at us rather than one we are following.
+    """
     sectors = scan_sectors(ranges)
     if sectors is None:
         return 0.0, 0.0, 'SENSOR_FAILSAFE'
@@ -119,6 +131,13 @@ def follow_command(target_distance, target_bearing, ranges, cfg):
             gap = target_distance - cfg.desired_distance
             speed *= clamp(gap / max(cfg.approach_margin, 1e-6), 0.0, 1.0)
             if speed <= 0.005:
+                # Only hold behind a robot facing AWAY. If it is facing us we
+                # would both sit here forever, so turn away instead. Keeps
+                # moving: rotating on the spot buys no separation.
+                if target_visible(oncoming_distance, oncoming_bearing):
+                    return (cfg.yield_speed,
+                            -min(cfg.yield_turn_speed, cfg.max_angular_speed),
+                            'YIELD_TURN')
                 return 0.0, turn, 'FOLLOW_HOLD'
         return speed, turn, 'FOLLOW'
 
