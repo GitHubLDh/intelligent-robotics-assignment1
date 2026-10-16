@@ -1,7 +1,7 @@
 {
   "R1": {
     "forward_speed": 0.16,
-    "base_angular_speed": -0.2,
+    "base_angular_speed": -0.14,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,
@@ -22,7 +22,7 @@
   },
   "R2": {
     "forward_speed": 0.14,
-    "base_angular_speed": 0.24,
+    "base_angular_speed": 0.09,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,
@@ -85,7 +85,7 @@
   },
   "R5": {
     "forward_speed": 0.13,
-    "base_angular_speed": -0.26,
+    "base_angular_speed": -0.12,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,

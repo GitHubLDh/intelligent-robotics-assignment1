@@ -82,8 +82,20 @@ class FollowParameters:
     red_turn_distance: float = 0.90
     # Rule 1: red this close is an emergency.
     very_close_distance: float = 0.45
+    # Rule 5: with no robot in view, a LiDAR return nearer than this is taken
+    # for a wall and steered away from. Only walls reach this rule - any robot
+    # in view is handled by rules 1-4 first - so it cannot turn us off a
+    # leader. The turn is firmer than the base curve so the wall actually
+    # leaves the view instead of being grazed along.
+    wall_detect_range: float = 2.00
+    wall_turn_speed: float = 0.50
     # Ahead must beat this for the coast to count as clear.
     coast_clear_range: float = 1.00
+    # A robot of EITHER colour this close inside the cone also blocks the
+    # coast. Checking only red let a robot escaping one collision drive
+    # straight into a green one it could not otherwise see: the LiDAR is
+    # blind to a peer inside ~0.75 m, so neither check would have caught it.
+    coast_block_range: float = 0.90
     # Half-width of the cone that has to be free of red before we call the
     # coast clear and drive off. The LiDAR sits above the other robots'
     # bodies and cannot see a peer closer than ~0.75 m, so in a nose-to-nose
@@ -113,14 +125,23 @@ def beam_angle(index, beams=N_BEAMS):
     return -HALF_FOV + FIELD_OF_VIEW * index / (beams - 1)
 
 
+def _valid_scan(scan):
+    return (scan is not None and len(scan) == N_BEAMS and
+            all(isinstance(d, (int, float)) and math.isfinite(d) and
+                0 < d <= RANGE_MAX + 0.01 for d in scan))
+
+
+def sector_min(scan, low, high):
+    """Nearest return with a beam angle in [low, high], else RANGE_MAX."""
+    vals = [d for i, d in enumerate(scan) if low <= beam_angle(i) <= high]
+    return min(vals) if vals else RANGE_MAX
+
+
 def clearance_ahead(scan, half_width=math.radians(15)):
     """Nearest LiDAR return in the forward cone, or None if the scan is bad."""
-    if (scan is None or len(scan) != N_BEAMS or
-            not all(isinstance(d, (int, float)) and math.isfinite(d) and
-                    0 < d <= RANGE_MAX + 0.01 for d in scan)):
+    if not _valid_scan(scan):
         return None
-    ahead = [d for i, d in enumerate(scan) if abs(beam_angle(i)) <= half_width]
-    return min(ahead) if ahead else RANGE_MAX
+    return sector_min(scan, -half_width, half_width)
 
 
 def follow_command(green_distance, green_bearing,
@@ -150,10 +171,16 @@ def follow_command(green_distance, green_bearing,
     #    reported 4 m of open road. Rotating is what resolves it - our own
     #    heading changes, so the red slides out of the forward cone even
     #    though neither robot has moved - and then we leave along the gap.
-    red_in_cone = (red and red_distance < cfg.red_turn_distance
-                   and abs(red_bearing) <= cfg.coast_cone)
+    def blocks_cone(seen, distance, bearing):
+        return (seen and distance < cfg.coast_block_range
+                and abs(bearing) <= cfg.coast_cone)
+
+    # A robot of EITHER colour in the cone blocks the way out, not just a red.
+    coast_blocked = (ahead < cfg.coast_clear_range
+                     or blocks_cone(red, red_distance, red_bearing)
+                     or blocks_cone(green, green_distance, green_bearing))
     if red_threatens and red_distance < cfg.very_close_distance:
-        if ahead < cfg.coast_clear_range or red_in_cone:
+        if coast_blocked:
             # No forward component: we are touching something, so creeping
             # ahead only pushes. Rotation alone clears the cone, and it is
             # bounded - roughly coast_cone / turn_speed of a second.
@@ -188,6 +215,17 @@ def follow_command(green_distance, green_bearing,
         turn = clamp(cfg.steering_gain * red_bearing,
                      -approach_cap, approach_cap)
         return cfg.forward_speed, turn, 'APPROACH'
+
+    # 5. No robot in view at all, but the LiDAR sees something ahead: a wall.
+    #    Turn away from it, toward whichever half of the cone is more open,
+    #    until it drops out of range. Reached only when rules 1-4 declined,
+    #    so a visible robot is never mistaken for a wall.
+    if not green and not red and ahead < cfg.wall_detect_range:
+        left = sector_min(ranges, math.radians(10), HALF_FOV)
+        right_side = sector_min(ranges, -HALF_FOV, math.radians(-10))
+        direction = 1.0 if left >= right_side else -1.0
+        return cfg.forward_speed, direction * min(
+            cfg.wall_turn_speed, cfg.max_angular_speed), 'AVOID_WALL'
 
     # Nothing to act on: wander on the base curve.
     return cfg.forward_speed, clamp(cfg.base_angular_speed,
