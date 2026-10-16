@@ -14,8 +14,15 @@ MAX_RANGE_M = 4.0
 HALF_FOV_RAD = math.radians(50)
 MAX_MARKER_TO_BODY_M = 0.22
 MIN_ASSOCIATION_MARGIN_M = 0.045
-MIN_NEAR_SIDE_PROJECTION_M = 0.035
-MIN_FRONT_REAR_PROJECTION_GAP_M = 0.050
+# These set how far a leader may turn before its back stops being usable.
+# near_rear = 0.126 * cos(heading - line_of_sight), so the old 0.035 cut out
+# at 74 deg, which is where trains were measured breaking up mid-turn. 0.015
+# moves that to 83 deg. The gap test is the safety one - it is what stops a
+# FRONT marker being read as a rear one - so it is relaxed only in step, and
+# a robot past 90 deg still projects its rear marker on the far side and is
+# rejected outright.
+MIN_NEAR_SIDE_PROJECTION_M = 0.015
+MIN_FRONT_REAR_PROJECTION_GAP_M = 0.030
 # Where a follower's body centre sits when correctly in formation, measured
 # out from its leader's rear marker: desired_rear_range (0.275) is a
 # camera-to-marker range and the camera is 0.130 ahead of its own centre.
@@ -164,7 +171,13 @@ def choose_follow_target(green, bodies, red_bodies=frozenset()):
     see _body_fallback.
     """
     if not green:
-        return _body_fallback(bodies, red_bodies)
+        # No green back in view is the specified "target lost" condition, and
+        # the controller answers it with the base curve. Falling back to a
+        # bare body detection is what produced the five-robot gridlock: a body
+        # carries no direction, so following it is symmetric and two robots
+        # could follow each other. A green back cannot be mutual - seeing it
+        # means that robot faces away and cannot see us.
+        return None
     ordered = sorted(green, key=lambda c: c[0])
     for distance, bearing, index, body, marker in ordered:
         slot = _slot_centre(body, marker)

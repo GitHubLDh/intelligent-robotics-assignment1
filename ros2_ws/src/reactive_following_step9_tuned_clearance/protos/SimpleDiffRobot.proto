@@ -81,7 +81,10 @@ PROTO SimpleDiffRobot [
               metalness 0
               roughness 0.6
             }
-            geometry Box { size 0.002 0.088 0.046 }
+            # Widened 0.088 -> 0.160 so the leader's back still presents a
+            # usable target when it turns away from the follower. Stays inside
+            # the 0.186 backing above and well inside MAX_MARKER_TO_BODY_M.
+            geometry Box { size 0.002 0.160 0.056 }
           }
         ]
       }
@@ -94,7 +97,9 @@ PROTO SimpleDiffRobot [
               roughness 1
               metalness 0
             }
-            geometry Box { size 0.009 0.112 0.063 }
+            # Widened with the green face below, and kept larger than it so
+            # the colour is still exposed only rearwards, never around edges.
+            geometry Box { size 0.009 0.186 0.072 }
           }
         ]
       }
@@ -111,7 +116,10 @@ PROTO SimpleDiffRobot [
               metalness 0
               roughness 0.6
             }
-            geometry Box { size 0.002 0.088 0.046 }
+            # Widened 0.088 -> 0.160 so the leader's back still presents a
+            # usable target when it turns away from the follower. Stays inside
+            # the 0.186 backing above and well inside MAX_MARKER_TO_BODY_M.
+            geometry Box { size 0.002 0.160 0.056 }
           }
         ]
       }
