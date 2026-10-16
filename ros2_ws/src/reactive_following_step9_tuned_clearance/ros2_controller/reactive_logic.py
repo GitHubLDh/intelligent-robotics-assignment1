@@ -1,11 +1,17 @@
 """Basic reactive following. Four rules, checked most-urgent first.
 
-  1. something very close AND red  -> turn until the coast ahead is clear,
-                                      then drive that way
-  2. red closer than red_turn_distance           -> turn right
-  3. green closer than follow_distance           -> follow that robot
-  4. something detected beyond approach_distance -> go to it
-  otherwise                                      -> base curve
+  1. red NEARER THAN GREEN and very close -> turn until the coast ahead is
+                                             clear, then drive that way
+  2. red NEARER THAN GREEN, within red_turn_distance -> turn right
+  3. green closer than follow_distance               -> follow that robot
+  4. something detected beyond approach_distance     -> go to it
+  otherwise                                          -> base curve
+
+Rules 1 and 2 compare the two colours rather than just checking that red is
+visible. Seeing red at all is not a threat - every robot we follow has a red
+front half somewhere. What matters is which colour is NEARER: if the green
+back is the closer thing, the robot in front of us is facing away and we keep
+following it.
 
 Red is the front half of a robot (it is facing us), green is the rear half
 (it is facing away, so it can be followed). Sensing is frontal only: a 100
@@ -86,16 +92,22 @@ def follow_command(green_distance, green_bearing,
     red = visible(red_distance, red_bearing)
     right = -min(cfg.turn_speed, cfg.max_angular_speed)
 
-    # 1. Something very close and facing us. Turn until the way ahead is
-    #    actually clear, then take it. Both robots turn right, so a head-on
-    #    pair separates instead of mirroring each other.
-    if red and red_distance < cfg.very_close_distance:
+    # Red alone means nothing - every robot we follow has a red front half
+    # somewhere in view. It is a threat only when it is the NEARER colour,
+    # i.e. the thing closest to us is facing us. While a green back is the
+    # closer thing, we keep following it.
+    red_threatens = red and (not green or red_distance < green_distance)
+
+    # 1. Facing us and very close. Turn until the way ahead is actually
+    #    clear, then take it. Both robots turn right, so a head-on pair
+    #    separates instead of mirroring each other.
+    if red_threatens and red_distance < cfg.very_close_distance:
         if ahead < cfg.coast_clear_range:
             return cfg.min_speed, right, 'ESCAPE_TURN'
         return cfg.forward_speed, 0.0, 'ESCAPE_GO'
 
-    # 2. A robot facing us, close but not yet critical: turn right.
-    if red and red_distance < cfg.red_turn_distance:
+    # 2. Facing us, close but not yet critical: turn right.
+    if red_threatens and red_distance < cfg.red_turn_distance:
         return cfg.forward_speed, right, 'AVOID_RED'
 
     # 3. A green back within following range: steer onto it, easing off so we
