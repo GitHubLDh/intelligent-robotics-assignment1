@@ -11,19 +11,83 @@ N_BEAMS = 360
 RANGE_MAX = 2.5
 COLLISION_BACKOFF_S = 0.50
 COLLISION_BACKOFF_SPEED = -0.10
+# Used when the bumper fires but the front is clear: the contact came from
+# behind, so easing forward separates us where reversing would not.
+COLLISION_ADVANCE_SPEED = 0.06
 
 
 def clamp(v, lo, hi):
     return min(hi, max(lo, v))
 
 
-def collision_recovery_command(now, backoff_until, restart_at):
-    """Return a collision recovery command, or None when recovery is done."""
+def collision_recovery_command(now, backoff_until, restart_at, turn=0.0,
+                               rear_clear=True, front_blocked=True):
+    """Return a collision recovery command, or None when recovery is done.
+
+    `turn` is the robot's own reverse yaw. Reversing straight back left both
+    robots on their original headings, so they drove into each other again as
+    soon as the wait expired; the staggered restart only changed *when* that
+    happened. Backing out along a curve changes the heading instead.
+
+    The escape direction follows the contact, instead of always reversing:
+    reverse only when something really is in front AND the rear is open, drive
+    forward when the front is clear (the hit came from behind, so reversing
+    would push us back into it), and pivot in place when boxed in.
+    """
     if now < backoff_until:
-        return COLLISION_BACKOFF_SPEED, 0.0, 'COLLISION_BACKOFF'
+        if not front_blocked:
+            return COLLISION_ADVANCE_SPEED, turn, 'COLLISION_ADVANCE'
+        if rear_clear:
+            return COLLISION_BACKOFF_SPEED, turn, 'COLLISION_BACKOFF'
+        return 0.0, turn, 'COLLISION_TURN'
     if now < restart_at:
         return 0.0, 0.0, 'COLLISION_WAIT'
     return None
+
+
+def contact_context(snapshot, cfg):
+    """(rear_clear, front_blocked) for collision recovery, from one snapshot.
+
+    The LiDAR sits above the other robots' bodies and cannot see a peer closer
+    than ~0.75m, so a robot in front is detected from the camera markers; the
+    LiDAR still covers walls in every direction. Nothing senses a peer
+    *behind* us, so rear_clear reflects walls only.
+    """
+    if snapshot is None:
+        return False, True          # fail closed: pivot, never reverse blind
+    rear_distance, rear_bearing, front_distance, front_bearing, ranges = snapshot
+    s = lidar_sectors(ranges, rear_distance, rear_bearing) if ranges is not None else None
+    if s is None:
+        return False, True
+    rear_clear = (s['rear'] > cfg.lidar_rear_reverse_clear and
+                  s['rear_left'] > .33 and s['rear_right'] > .33)
+    peer_in_front = (
+        (marker_visible(front_distance, front_bearing) and
+         front_distance < cfg.head_on_range) or
+        (marker_visible(rear_distance, rear_bearing) and
+         rear_distance < cfg.head_on_range))
+    return rear_clear, peer_in_front or s['front'] < cfg.lidar_front_avoid
+
+
+def recovery_signature(name):
+    """Per-robot (reverse duration, reverse yaw) keyed off the robot name.
+
+    Every robot runs byte-identical rules, so a symmetric encounter produced
+    symmetric actions indefinitely. Giving each robot its own reverse duration
+    and yaw direction breaks that tie deterministically - reproducible for the
+    report, unlike a random draw - so two robots in the same bind separate
+    instead of mirroring each other.
+    """
+    try:
+        index = int(str(name)[1:])
+    except (TypeError, ValueError):
+        index = 1
+    step = max(0, index - 1)
+    duration = COLLISION_BACKOFF_S + 0.14 * step
+    # Alternating sign is what actually separates a head-on pair; the
+    # magnitude spread keeps three-robot pile-ups from resolving in lockstep.
+    direction = 1.0 if index % 2 else -1.0
+    return duration, direction * (0.30 + 0.08 * step)
 
 
 @dataclass(frozen=True)

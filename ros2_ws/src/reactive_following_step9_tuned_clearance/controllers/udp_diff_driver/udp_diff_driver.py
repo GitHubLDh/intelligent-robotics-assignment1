@@ -41,6 +41,10 @@ def main():
     camera.enable(dt)
     camera.recognitionEnable(dt)
     lidar.enable(dt * 2)
+    # Makes the beams visible in the 3D view via
+    # View > Optional Rendering > Show Lidar Point Cloud. Diagnostic only:
+    # the returns we act on come from getRangeImage() either way.
+    lidar.enablePointCloud()
     bumper.enable(dt)
     if lidar.getHorizontalResolution() != 360 or lidar.getNumberOfLayers() != 3:
         raise RuntimeError(f'{name}: expected 360 beams x 3 LiDAR layers')
