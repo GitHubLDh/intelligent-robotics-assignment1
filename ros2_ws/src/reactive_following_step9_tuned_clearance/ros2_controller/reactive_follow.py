@@ -86,7 +86,7 @@ class ReactiveFollower(Node):
         self.get_logger().info(
             f"{name}: reactive follower; v={cfg.forward_speed:.2f} "
             f"gain={cfg.steering_gain:.2f} "
-            f"follow<{cfg.follow_distance:.2f} standoff={cfg.desired_distance:.2f} "
+            f"follow<{cfg.follow_distance:.2f} cruise>{cfg.cruise_distance:.2f} "
             f"red_turn<{cfg.red_turn_distance:.2f}")
 
     def on_local_sensors(self, msg):

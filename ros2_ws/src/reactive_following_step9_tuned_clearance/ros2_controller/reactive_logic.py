@@ -43,12 +43,26 @@ class FollowParameters:
     max_angular_speed: float = 1.1
     base_angular_speed: float = -0.20
     turn_speed: float = 0.80
-    # Rule 4: go towards anything seen further away than this.
-    approach_distance: float = 1.00
+    # Rule 4: go towards anything seen further away than this. Matched to
+    # red_turn_distance so a red between the two is not left unhandled.
+    approach_distance: float = 0.90
     # Rule 3: a green back nearer than this is followed.
     follow_distance: float = 1.20
-    # Standoff held while following, so we close in but do not ram.
-    desired_distance: float = 0.45
+    # Speed ramp while following. At or beyond cruise_distance we run at full
+    # speed; below it we ease off, reaching the floor at close_distance.
+    #
+    # The ramp used to reach ZERO at the standoff, which makes a ring settle
+    # at the floor speed: every robot closes to the standoff, every robot then
+    # commands min_speed, and the whole formation crawls. Ramping down only
+    # once we are closer than we want leaves the equilibrium at full speed.
+    #
+    # cruise_distance must also agree with the ring the turn cap can hold. For
+    # five robots, spacing and ring radius are locked: s = 2*R*sin(36 deg) =
+    # 1.176*R, and the camera reads 0.19 m less than centre spacing (its own
+    # 0.130 offset plus the green half's 0.060). So cruise 0.85 -> spacing
+    # 1.04 -> ring R 0.88, which min_follow_radius 0.90 can just hold.
+    cruise_distance: float = 0.85
+    close_distance: float = 0.50
     # Tightest arc allowed while FOLLOWING. Steering straight at the leader is
     # pure pursuit: it cuts inside the leader's path, so a ring of followers
     # spirals inward until they pile up. In the 0.95 m start ring the leader
@@ -146,8 +160,8 @@ def follow_command(green_distance, green_bearing,
                          cfg.forward_speed / max(cfg.min_follow_radius, 1e-6))
         turn = clamp(cfg.steering_gain * green_bearing,
                      -follow_cap, follow_cap)
-        reach = max(cfg.follow_distance - cfg.desired_distance, 1e-6)
-        ratio = clamp((green_distance - cfg.desired_distance) / reach, 0.0, 1.0)
+        reach = max(cfg.cruise_distance - cfg.close_distance, 1e-6)
+        ratio = clamp((green_distance - cfg.close_distance) / reach, 0.0, 1.0)
         speed = cfg.min_speed + (cfg.forward_speed - cfg.min_speed) * ratio
         return speed, turn, 'FOLLOW'
 
