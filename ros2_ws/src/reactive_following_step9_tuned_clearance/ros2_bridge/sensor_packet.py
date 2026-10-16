@@ -7,6 +7,8 @@ The scan's index 180 is robot +X (forward), index 90 is right.
 from math import nan, isfinite
 
 N_BEAMS = 360
+# Must track the LiDAR's maxRange in SimpleDiffRobot.proto and lidar_scan.py.
+RANGE_MAX_M = 4.0
 CAMERA_FIELDS = ('distance_m', 'bearing_rad', 'front_distance_m', 'front_bearing_rad')
 
 
@@ -14,8 +16,8 @@ def sensor_packet(data):
     scan = data.get('lidar_ranges_m')
     if not isinstance(scan, (list, tuple)) or len(scan) != N_BEAMS:
         scan = [nan] * N_BEAMS
-    elif any(not isinstance(r, (int, float)) or not isfinite(r) or r < 0 or r > 2.51
-             for r in scan):
+    elif any(not isinstance(r, (int, float)) or not isfinite(r) or r < 0
+             or r > RANGE_MAX_M + 0.01 for r in scan):
         scan = [nan] * N_BEAMS
     result = []
     for i, key in enumerate(CAMERA_FIELDS):

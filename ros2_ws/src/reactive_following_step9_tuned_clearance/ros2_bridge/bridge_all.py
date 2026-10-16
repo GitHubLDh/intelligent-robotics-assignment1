@@ -111,7 +111,7 @@ class RobotBridge(Node):
             scan.time_increment = 0.0
             scan.scan_time = 0.064
             scan.range_min = 0.05
-            scan.range_max = 2.5
+            scan.range_max = 4.0
             scan.ranges = [float(x) for x in values]
             self.scan_pub.publish(scan)
         if "sim_time_s" in data:
