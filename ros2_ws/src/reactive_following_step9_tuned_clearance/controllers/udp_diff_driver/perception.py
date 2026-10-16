@@ -27,6 +27,16 @@ SLOT_RADIUS_M = 0.26
 # we follow the body so a train survives the turn. Deliberately short: far
 # bodies are not plausibly the robot we were queueing behind.
 BODY_FALLBACK_RANGE_M = 2.0
+# Marker-based following is ANTISYMMETRIC: seeing a robot's green back means
+# it faces away, so it cannot see us, and mutual following is impossible. A
+# body carries no direction, so body-following is symmetric and five robots
+# became a mutual attraction sink that settled into everyone FOLLOW_HOLDing
+# at desired_rear_range from everyone else. This floor restores the asymmetry:
+#   piled up (centres ~0.4m apart)  -> camera reads ~0.27m -> refused
+#   real leader at desired_rear_range -> 0.275 + 0.126     -> 0.401m, accepted
+# It also sits above FOLLOW_HOLD's desired_rear_range + hold_tolerance (0.335),
+# so a body target can never trigger a hold.
+BODY_FALLBACK_MIN_M = 0.36
 
 
 def _measurement(obj):
@@ -119,6 +129,11 @@ def _body_fallback(bodies, red_bodies):
     Bodies carrying a classified RED front marker are skipped - those are
     pointed at us, and following one would mean driving at an oncoming robot.
     """
+    # Anything this close means we are already in a cluster. Latching onto it
+    # is what produced the five-robot gridlock, so refuse outright and let the
+    # base behaviour carry us out instead of adding to the pile.
+    if any(b[3] < BODY_FALLBACK_MIN_M for b in bodies):
+        return None
     usable = [b for i, b in enumerate(bodies)
               if i not in red_bodies and b[3] <= BODY_FALLBACK_RANGE_M]
     if not usable:
