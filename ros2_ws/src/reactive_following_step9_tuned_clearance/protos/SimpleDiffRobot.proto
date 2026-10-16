@@ -194,7 +194,16 @@ PROTO SimpleDiffRobot [
       }
       # World-space z assumes robot is upright on level ground.
       Lidar {
-        translation 0 0 0.070
+        # Front edge, not the middle of the roof. Centre-mounted it had to sit
+        # ABOVE its own chassis to avoid self-echo, which put it above every
+        # other robot's body top too - blind to a peer closer than ~0.75 m,
+        # the cause of robots driving into each other all along. Mounted at
+        # x=0.130 it is outside its own body radius (0.115), so every forward
+        # ray's closest approach to the chassis is BEHIND the sensor, and it
+        # can drop to z=0.115 absolute: inside the 0.045-0.125 band of every
+        # peer, so robots are now visible at ALL ranges. Only possible because
+        # the LiDAR is frontal - a 360 degree one would face its own chassis.
+        translation 0.130 0 0.030
         name "safety_lidar"
         projection "cylindrical"
         type "fixed"

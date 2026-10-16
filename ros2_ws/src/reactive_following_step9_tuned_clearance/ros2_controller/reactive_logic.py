@@ -1,10 +1,10 @@
-"""Basic reactive following. Four rules, checked most-urgent first.
+"""Basic reactive following. Five rules, checked most-urgent first.
 
-  1. red NEARER THAN GREEN and very close -> turn until the coast ahead is
-                                             clear, then drive that way
-  2. red NEARER THAN GREEN, within red_turn_distance -> turn right
-  3. green closer than follow_distance               -> follow that robot
-  4. something detected beyond approach_distance     -> go to it
+  1. red nearer than green, very close    -> turn on the spot, never forward
+  2. red nearer than green, within red_turn_distance -> turn right
+  3. green visible anywhere                          -> follow that robot
+  4. red only, beyond approach_distance              -> go to it
+  5. no robot at all, wall within wall_detect_range  -> turn away until clear
   otherwise                                          -> base curve
 
 Rules 1 and 2 compare the two colours rather than just checking that red is
@@ -18,8 +18,9 @@ Red is the front half of a robot (it is facing us), green is the rear half
 degree, 4 m camera and LiDAR. One current snapshot per decision - no target
 memory, no global pose, no inter-robot communication.
 
-Linear speed is never zero in any rule, so no arrangement of robots can
-settle into a standstill.
+Linear speed is zero only in rule 1, where rotating on the spot is the whole
+point and the state is time-bounded; no other rule can stop a robot, so no
+arrangement of them can settle into a standstill.
 """
 from dataclasses import dataclass
 import math
@@ -89,19 +90,6 @@ class FollowParameters:
     # leaves the view instead of being grazed along.
     wall_detect_range: float = 2.00
     wall_turn_speed: float = 0.50
-    # Ahead must beat this for the coast to count as clear.
-    coast_clear_range: float = 1.00
-    # A robot of EITHER colour this close inside the cone also blocks the
-    # coast. Checking only red let a robot escaping one collision drive
-    # straight into a green one it could not otherwise see: the LiDAR is
-    # blind to a peer inside ~0.75 m, so neither check would have caught it.
-    coast_block_range: float = 0.90
-    # Half-width of the cone that has to be free of red before we call the
-    # coast clear and drive off. The LiDAR sits above the other robots'
-    # bodies and cannot see a peer closer than ~0.75 m, so in a nose-to-nose
-    # contact it reports 4 m of open space; the camera is the only sensor
-    # that can see the robot we are touching.
-    coast_cone: float = 0.60
     # Acceleration limits, applied by the node. Asymmetric on purpose: the
     # limiter exists to stop a target appearing at the edge of the cone from
     # producing an instant full-rate swing, which is an INCREASE in |w|.
@@ -161,31 +149,21 @@ def follow_command(green_distance, green_bearing,
     # closer thing, we keep following it.
     red_threatens = red and (not green or red_distance < green_distance)
 
-    # 1. Facing us and very close. Turn until the way ahead is actually
-    #    clear, then take it. Both robots turn right, so a head-on pair
-    #    separates instead of mirroring each other.
+    # 1. A robot is facing us and very close: turn on the spot, never drive
+    #    forward. There used to be an ESCAPE_GO branch that drove ahead once
+    #    the cone looked clear, and it oscillated against ESCAPE_TURN: the
+    #    turn pushed the red just outside the cone, GO drove forward, that
+    #    brought it back in, and the pair sat there swapping between the two.
+    #    While a close red is on screen at all there is no forward direction
+    #    we can trust, so we only rotate.
     #
-    #    "Clear" must mean clear to BOTH sensors. Checking only the LiDAR
-    #    made a nose-to-nose pair drive into each other at full speed
-    #    forever: a robot that close is invisible to the LiDAR, which
-    #    reported 4 m of open road. Rotating is what resolves it - our own
-    #    heading changes, so the red slides out of the forward cone even
-    #    though neither robot has moved - and then we leave along the gap.
-    def blocks_cone(seen, distance, bearing):
-        return (seen and distance < cfg.coast_block_range
-                and abs(bearing) <= cfg.coast_cone)
-
-    # A robot of EITHER colour in the cone blocks the way out, not just a red.
-    coast_blocked = (ahead < cfg.coast_clear_range
-                     or blocks_cone(red, red_distance, red_bearing)
-                     or blocks_cone(green, green_distance, green_bearing))
+    #    Rotation alone resolves it and is bounded: our own heading changes,
+    #    so the red leaves the camera's 50 degree view within about
+    #    (0.87 + 0.87) / turn_speed seconds even if neither robot moves. Once
+    #    it is gone the ordinary rules drive us off. Both robots turn right,
+    #    so a head-on pair separates instead of mirroring each other.
     if red_threatens and red_distance < cfg.very_close_distance:
-        if coast_blocked:
-            # No forward component: we are touching something, so creeping
-            # ahead only pushes. Rotation alone clears the cone, and it is
-            # bounded - roughly coast_cone / turn_speed of a second.
-            return 0.0, right, 'ESCAPE_TURN'
-        return cfg.forward_speed, 0.0, 'ESCAPE_GO'
+        return 0.0, right, 'ESCAPE_TURN'
 
     # 2. Facing us, close but not yet critical: turn right.
     if red_threatens and red_distance < cfg.red_turn_distance:

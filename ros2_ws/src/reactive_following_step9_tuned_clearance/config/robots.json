@@ -43,7 +43,7 @@
   },
   "R3": {
     "forward_speed": 0.12,
-    "base_angular_speed": -0.16,
+    "base_angular_speed": -0.08,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,
