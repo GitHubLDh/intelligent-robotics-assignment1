@@ -1,0 +1,212 @@
+digraph SafeLogicStateDiagram {
+  rankdir=TB;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=10];
+  splines=polyline;
+  nodesep=0.35;
+  ranksep=0.5;
+
+  node [shape=diamond, style=filled, fillcolor="#FFF3B0"]
+  dHealth; dContact; dBackoffWindow; dLidarValid; dEmergencyRaw; dReverseClearA;
+  dFollowHold; dEmergFront; dEmergSub; dCorner; dCornerSub; dSideBlocked;
+  dRedAhead; dRedAheadSub; dFrontAvoid; dFrontAvoidSub; dDiagonal; dSideAvoid;
+  dClearFwd; dClearFwdSub; dProxHold; dGreen; dLeaderNew; dLeaderClear; dNear;
+
+  node [shape=box, style="filled,rounded"]
+
+  /* ============ OUTER WRAPPER (follow_improved.py) ============ */
+  subgraph cluster_wrapper {
+    label="follow_improved.py - outer wrapper, runs every tick (20Hz)";
+    style=dashed; color="#888888"; fontsize=12; labeljust=l;
+
+    start [shape=ellipse, fillcolor="#E0E0E0", label="New sensor tick"];
+
+    dHealth [label="Snapshot fresh & valid?\n(received recently, not stale/missing)"];
+    n_sensorfailsafe1 [fillcolor="#F4A6A6", label="SENSOR_FAILSAFE\nv=0  w=0"];
+
+    dContact [label="Currently recovering\nfrom physical contact?"];
+    dBackoffWindow [label="Still within this\nretry's backoff duration?\n(escalates +0.5*retry, capped 2.0s)"];
+    n_collbackoff [fillcolor="#FFD08A", label="COLLISION_BACKOFF\nv=-0.10\nw=turn (same fixed\nclockwise direction)"];
+    n_collwait [fillcolor="#F4A6A6", label="COLLISION_WAIT\nv=0  w=0"];
+    note_retry [shape=note, fillcolor="#FFFFFF", fontsize=9,
+      label="If contact still active\nwhen wait ends: retry_count+=1,\nrestart with longer backoff"];
+
+    safe_command_box [shape=box3d, fillcolor="#C7E9FF",
+      label="Call safe_command()\n(the pure, stateless priority cascade\n- see other cluster)"];
+
+    dLeaderNew [label="Result is FOLLOW* AND\nleader just newly acquired?\n(wasn't following a moment ago)"];
+    dLeaderClear [label="leader_path_is_clear()?\n(nothing closer than the leader,\nroughly in its direction, on lidar)"];
+    n_leaderhold [fillcolor="#F4A6A6", label="LEADER_CHECK_HOLD\nv=0  w=0\n(0.3s, then re-evaluate)"];
+
+    publish [shape=ellipse, fillcolor="#E0E0E0", label="Publish cmd_vel + mode"];
+  }
+
+  /* ============ INNER PRIORITY CASCADE (safe_logic.py: safe_command) ============ */
+  subgraph cluster_inner {
+    label="safe_logic.py - safe_command(): stateless, re-evaluated fresh every call, top-to-bottom priority";
+    style=dashed; color="#888888"; fontsize=12; labeljust=l;
+
+    dLidarValid [label="lidar_sectors() valid?\n(360 beams, all finite)"];
+    n_sensorfailsafe2 [fillcolor="#F4A6A6", label="SENSOR_FAILSAFE\nv=0  w=0"];
+
+    dEmergencyRaw [label="raw_front < 0.18m?\n(unmasked - never hidden,\neven if it's the tracked leader)"];
+    dReverseClearA [label="reverse_clear?\n(rear + rear-diagonals open)"];
+    n_emergrev [fillcolor="#FFD08A", label="EMERGENCY_REVERSE\nv=-0.04\nw=turn if red_ahead else 0"];
+    n_emergstop [fillcolor="#F4A6A6", label="EMERGENCY_STOP\nv=0  w=0"];
+
+    dFollowHold [label="green AND not red_ahead AND\nrear_distance <= desired_rear_range\n+ hold_tolerance AND sides/front clear?"];
+    n_followhold [fillcolor="#F4A6A6", label="FOLLOW_HOLD\nv=0  w=0\n(at target distance, stay put)"];
+
+    dEmergFront [label="f < lidar_emergency (0.28)?"];
+    dEmergSub [label="red_ahead & reverse_clear?\n/ pivot_clear?\n/ reverse_clear?"];
+    n_yieldrevturn1 [fillcolor="#FFD08A", label="YIELD_REVERSE_TURN\nv=-0.045, w=turn"];
+    n_braketurn [fillcolor="#C9E8C0", label="BRAKE_TURN\nv=0, w=turn"];
+    n_emergbackoff [fillcolor="#FFD08A", label="EMERGENCY_BACKOFF\nv=-0.04, w=0"];
+    n_blockedstop1 [fillcolor="#F4A6A6", label="BLOCKED_STOP\nv=0  w=0"];
+
+    dCorner [label="(pocket OR corner) AND\nnot red_ahead?\npocket: f,fl,fr all <0.72 & sides<0.78\ncorner: f<0.56 & (fl/l or fr/r or fl&fr) tight"];
+    dCornerSub [label="pivot_clear? /\nreverse_clear?"];
+    n_cornerclearturn [fillcolor="#C9E8C0", label="CORNER_CLEAR_TURN\nv=0, w=escape_w\n(fixed clockwise)"];
+    n_cornerbackoff [fillcolor="#FFD08A", label="CORNER_BACKOFF\nv=-0.048, w=0"];
+    n_cornerblocked [fillcolor="#F4A6A6", label="CORNER_BLOCKED\nv=0  w=0"];
+
+    dSideBlocked [label="min(left, right) < 0.19?\n(wall inside footprint margin)"];
+    n_escapeside [fillcolor="#FFD08A", label="ESCAPE_SIDE\nv=-0.04, w=0"];
+    n_sideblocked [fillcolor="#F4A6A6", label="SIDE_BLOCKED\nv=0  w=0"];
+
+    dRedAhead [label="red_ahead?\n(another robot's FRONT marker\nwithin 0.7m, bearing<0.85rad)"];
+    dRedAheadSub [label="f<0.36 & reverse_clear? /\nf<0.48 or near-side<0.30?"];
+    n_yieldrevturn2 [fillcolor="#FFD08A", label="YIELD_REVERSE_TURN\nv=-0.045, w=turn"];
+    n_yieldturn [fillcolor="#C9E8C0", label="YIELD_TURN\nv=0, w=headon_w"];
+    n_yield [fillcolor="#C9E8C0", label="YIELD\nv=0, w=headon_w\n(no forward creep)"];
+
+    dFrontAvoid [label="f < lidar_front_avoid (0.50)?"];
+    dFrontAvoidSub [label="pivot_clear? /\nf<0.34 & reverse_clear?"];
+    n_avoidfront [fillcolor="#C9E8C0", label="AVOID_FRONT\nv=0, w=escape_w"];
+    n_escaperev [fillcolor="#FFD08A", label="ESCAPE_REVERSE\nv=-0.048, w=0"];
+    n_blockedstop2 [fillcolor="#F4A6A6", label="BLOCKED_STOP\nv=0  w=0"];
+
+    dDiagonal [label="min(front_left, front_right)\n< 0.34?"];
+    n_avoiddiag [fillcolor="#C9E8C0", label="AVOID_DIAGONAL\nv=0, w=escape_w"];
+
+    dSideAvoid [label="min(left, right) <\nlidar_side_avoid (0.28)?"];
+    n_avoidside [fillcolor="#C9E8C0", label="AVOID_SIDE\nv=0, w=escape_w"];
+
+    dClearFwd [label="not green & not red &\nf<0.88 & min(fl,fr)<0.76?"];
+    dClearFwdSub [label="f>0.62 & min(fl,fr)>0.47\n& min(l,r)>0.30?"];
+    n_cleararc [fillcolor="#D7F2C2", label="CLEAR_FORWARD_ARC\nsmall v>0, w=escape_w"];
+    n_clearturn [fillcolor="#C9E8C0", label="CLEAR_FORWARD_TURN\nv=0, w=escape_w"];
+
+    dProxHold [label="not green & not red &\n0.36<f<desired_rear_range &\ndiagonals/sides clear?"];
+    n_proxhold [fillcolor="#F4A6A6", label="PROXIMITY_HOLD\nv=0  w=0"];
+
+    dGreen [label="green?\n(currently tracking a leader\nvia camera)"];
+    n_follow [fillcolor="#D7F2C2", label="FOLLOW / FOLLOW_ALIGN\nv=proportional to distance error\nw=proportional to bearing\n(capped by wall-slowdown)"];
+
+    dNear [label="near = min(f,fl,fr) < 1.10?"];
+    n_baseclearblend [fillcolor="#D7F2C2", label="BASE_CLEAR_BLEND\nv=forward_speed (wall-slowed)\nw=blend(direction-aware escape,\nown base_angular_speed)"];
+    n_basecurve [fillcolor="#D7F2C2", label="BASE_CURVE / BASE_CURVE_SLOW\nv=forward_speed\nw=own base_angular_speed\n(independent per-robot curve)"];
+
+    n_return [shape=point, width=0.15, fillcolor="#555555", label=""];
+  }
+
+  /* ===================== EDGES ===================== */
+  start -> dHealth;
+  dHealth -> n_sensorfailsafe1 [label="no"];
+  dHealth -> dContact [label="yes"];
+
+  dContact -> dBackoffWindow [label="yes"];
+  dBackoffWindow -> n_collbackoff [label="yes"];
+  dBackoffWindow -> n_collwait [label="no"];
+  n_collbackoff -> publish;
+  n_collwait -> publish;
+  n_collwait -> note_retry [style=dotted, arrowhead=none];
+
+  dContact -> safe_command_box [label="no"];
+  safe_command_box -> dLidarValid;
+
+  dLidarValid -> n_sensorfailsafe2 [label="no"];
+  n_sensorfailsafe2 -> n_return;
+  dLidarValid -> dEmergencyRaw [label="yes"];
+
+  dEmergencyRaw -> dReverseClearA [label="yes"];
+  dReverseClearA -> n_emergrev [label="yes"];
+  dReverseClearA -> n_emergstop [label="no"];
+  n_emergrev -> n_return;
+  n_emergstop -> n_return;
+
+  dEmergencyRaw -> dFollowHold [label="no"];
+  dFollowHold -> n_followhold [label="yes"];
+  n_followhold -> n_return;
+  dFollowHold -> dEmergFront [label="no"];
+
+  dEmergFront -> dEmergSub [label="yes"];
+  dEmergSub -> n_yieldrevturn1 [label="red_ahead\n&reverse_clear"];
+  dEmergSub -> n_braketurn [label="pivot_clear"];
+  dEmergSub -> n_emergbackoff [label="reverse_clear"];
+  dEmergSub -> n_blockedstop1 [label="else"];
+  n_yieldrevturn1 -> n_return; n_braketurn -> n_return;
+  n_emergbackoff -> n_return; n_blockedstop1 -> n_return;
+
+  dEmergFront -> dCorner [label="no"];
+  dCorner -> dCornerSub [label="yes"];
+  dCornerSub -> n_cornerclearturn [label="pivot_clear"];
+  dCornerSub -> n_cornerbackoff [label="reverse_clear"];
+  dCornerSub -> n_cornerblocked [label="else"];
+  n_cornerclearturn -> n_return; n_cornerbackoff -> n_return; n_cornerblocked -> n_return;
+
+  dCorner -> dSideBlocked [label="no"];
+  dSideBlocked -> n_escapeside [label="yes,\nreverse_clear"];
+  dSideBlocked -> n_sideblocked [label="yes,\nelse"];
+  n_escapeside -> n_return; n_sideblocked -> n_return;
+
+  dSideBlocked -> dRedAhead [label="no"];
+  dRedAhead -> dRedAheadSub [label="yes"];
+  dRedAheadSub -> n_yieldrevturn2 [label="f<0.36 &\nreverse_clear"];
+  dRedAheadSub -> n_yieldturn [label="f<0.48 or\nnear-side<0.30"];
+  dRedAheadSub -> n_yield [label="else"];
+  n_yieldrevturn2 -> n_return; n_yieldturn -> n_return; n_yield -> n_return;
+
+  dRedAhead -> dFrontAvoid [label="no"];
+  dFrontAvoid -> dFrontAvoidSub [label="yes"];
+  dFrontAvoidSub -> n_avoidfront [label="pivot_clear"];
+  dFrontAvoidSub -> n_escaperev [label="f<0.34 &\nreverse_clear"];
+  dFrontAvoidSub -> n_blockedstop2 [label="else"];
+  n_avoidfront -> n_return; n_escaperev -> n_return; n_blockedstop2 -> n_return;
+
+  dFrontAvoid -> dDiagonal [label="no"];
+  dDiagonal -> n_avoiddiag [label="yes"];
+  n_avoiddiag -> n_return;
+  dDiagonal -> dSideAvoid [label="no"];
+  dSideAvoid -> n_avoidside [label="yes"];
+  n_avoidside -> n_return;
+
+  dSideAvoid -> dClearFwd [label="no"];
+  dClearFwd -> dClearFwdSub [label="yes"];
+  dClearFwdSub -> n_cleararc [label="yes"];
+  dClearFwdSub -> n_clearturn [label="no"];
+  n_cleararc -> n_return; n_clearturn -> n_return;
+
+  dClearFwd -> dProxHold [label="no"];
+  dProxHold -> n_proxhold [label="yes"];
+  n_proxhold -> n_return;
+
+  dProxHold -> dGreen [label="no"];
+  dGreen -> n_follow [label="yes"];
+  n_follow -> n_return;
+
+  dGreen -> dNear [label="no"];
+  dNear -> n_baseclearblend [label="yes"];
+  dNear -> n_basecurve [label="no"];
+  n_baseclearblend -> n_return; n_basecurve -> n_return;
+
+  n_return -> dLeaderNew [label="(v, w, mode)\nreturned", penwidth=2];
+
+  /* leader-check wrapper, applied only on top of FOLLOW* results */
+  dLeaderNew -> dLeaderClear [label="yes"];
+  dLeaderClear -> n_leaderhold [label="no - something\ncloser in the way"];
+  dLeaderClear -> publish [label="yes"];
+  n_leaderhold -> publish;
+  dLeaderNew -> publish [label="no"];
+}
