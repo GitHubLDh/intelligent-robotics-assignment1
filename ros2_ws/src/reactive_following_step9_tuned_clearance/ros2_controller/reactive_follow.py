@@ -95,7 +95,7 @@ class ReactiveFollower(Node):
         self.get_logger().info(
             f"{name}: reactive follower; v={cfg.forward_speed:.2f} "
             f"gain={cfg.steering_gain:.2f} "
-            f"follow<{cfg.follow_distance:.2f} cruise>{cfg.cruise_distance:.2f} "
+            f"cruise>{cfg.cruise_distance:.2f} "
             f"red_turn<{cfg.red_turn_distance:.2f}")
 
     def on_local_sensors(self, msg):
@@ -183,14 +183,14 @@ def main():
     # Slide 7 compares identical initial conditions across turning strengths.
     parser.add_argument("--steering-gain", type=float,
                         help="override all robots: 0 = no following")
-    parser.add_argument("--follow-distance", type=float,
-                        help="range within which a green back is followed")
+    parser.add_argument("--cruise-distance", type=float,
+                        help="distance at which a follower resumes full speed")
     args = parser.parse_args()
     overrides = {}
     if args.steering_gain is not None:
         overrides["steering_gain"] = args.steering_gain
-    if args.follow_distance is not None:
-        overrides["follow_distance"] = args.follow_distance
+    if args.cruise_distance is not None:
+        overrides["cruise_distance"] = args.cruise_distance
     cfg = load_config(overrides=overrides)
 
     rclpy.init()

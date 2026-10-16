@@ -46,8 +46,13 @@ class FollowParameters:
     # Rule 4: go towards anything seen further away than this. Matched to
     # red_turn_distance so a red between the two is not left unhandled.
     approach_distance: float = 0.90
-    # Rule 3: a green back nearer than this is followed.
-    follow_distance: float = 1.20
+    # Tightest arc allowed while approaching a distant red. Capped like
+    # FOLLOW, just less tightly so acquisition stays reasonably quick. Left
+    # uncapped, a red at the edge of the cone commanded 1.5*0.83 -> 1.1 rad/s
+    # and the robot swung hard enough to hit whatever was beside or behind
+    # it; the peak never showed in the log because modes are only logged on
+    # change, so it looked like a mild 0.27 right up to the collision.
+    approach_min_radius: float = 0.45
     # Speed ramp while following. At or beyond cruise_distance we run at full
     # speed; below it we ease off, reaching the floor at close_distance.
     #
@@ -159,10 +164,13 @@ def follow_command(green_distance, green_bearing,
     if red_threatens and red_distance < cfg.red_turn_distance:
         return cfg.forward_speed, right, 'AVOID_RED'
 
-    # 3. A green back within following range: steer onto it, easing off so we
-    #    settle near desired_distance rather than driving into it. The speed
-    #    floor means a follower never stops, so a chain cannot freeze.
-    if green and green_distance < cfg.follow_distance:
+    # 3. Any green back in view: steer onto it, easing off so we settle near
+    #    cruise_distance rather than driving into it. There is no separate
+    #    "approach a green" case - the speed ramp already runs at full speed
+    #    when it is far away, so following and approaching a green are the
+    #    same behaviour. Collapsing them removes the FOLLOW <-> APPROACH flip
+    #    that let a robot abandon its leader and swing at something else.
+    if green:
         follow_cap = min(cfg.max_angular_speed,
                          cfg.forward_speed / max(cfg.min_follow_radius, 1e-6))
         turn = clamp(cfg.steering_gain * green_bearing,
@@ -172,16 +180,14 @@ def follow_command(green_distance, green_bearing,
         speed = cfg.min_speed + (cfg.forward_speed - cfg.min_speed) * ratio
         return speed, turn, 'FOLLOW'
 
-    # 4. Something is out there, further off: head towards it.
-    candidates = [(green_distance, green_bearing)] if green else []
-    if red:
-        candidates.append((red_distance, red_bearing))
-    if candidates:
-        distance, bearing = min(candidates)
-        if distance >= cfg.approach_distance:
-            turn = clamp(cfg.steering_gain * bearing,
-                         -cfg.max_angular_speed, cfg.max_angular_speed)
-            return cfg.forward_speed, turn, 'APPROACH'
+    # 4. No green anywhere, but a robot is out there facing us and far
+    #    enough not to be a threat: head towards it to join up.
+    if red and red_distance >= cfg.approach_distance:
+        approach_cap = min(cfg.max_angular_speed,
+                           cfg.forward_speed / max(cfg.approach_min_radius, 1e-6))
+        turn = clamp(cfg.steering_gain * red_bearing,
+                     -approach_cap, approach_cap)
+        return cfg.forward_speed, turn, 'APPROACH'
 
     # Nothing to act on: wander on the base curve.
     return cfg.forward_speed, clamp(cfg.base_angular_speed,
