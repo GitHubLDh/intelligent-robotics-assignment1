@@ -49,6 +49,16 @@ class FollowParameters:
     follow_distance: float = 1.20
     # Standoff held while following, so we close in but do not ram.
     desired_distance: float = 0.45
+    # Tightest arc allowed while FOLLOWING. Steering straight at the leader is
+    # pure pursuit: it cuts inside the leader's path, so a ring of followers
+    # spirals inward until they pile up. In the 0.95 m start ring the leader
+    # sits at ~0.63 rad, giving w = 1.5*0.63 = 0.94 rad/s and a turn radius of
+    # only v/w = 0.15 m. Capping by RADIUS rather than by a fixed w matters:
+    # the robots run at different speeds (0.12-0.16), so one shared w cap
+    # would give each a different radius and distort the ring, whereas
+    # w_cap = forward_speed / min_follow_radius holds them all on one circle.
+    # Only FOLLOW is capped; APPROACH still turns at full rate to acquire.
+    min_follow_radius: float = 0.90
     # Rule 2: a robot facing us nearer than this makes us turn right.
     red_turn_distance: float = 0.90
     # Rule 1: red this close is an emergency.
@@ -132,8 +142,10 @@ def follow_command(green_distance, green_bearing,
     #    settle near desired_distance rather than driving into it. The speed
     #    floor means a follower never stops, so a chain cannot freeze.
     if green and green_distance < cfg.follow_distance:
+        follow_cap = min(cfg.max_angular_speed,
+                         cfg.forward_speed / max(cfg.min_follow_radius, 1e-6))
         turn = clamp(cfg.steering_gain * green_bearing,
-                     -cfg.max_angular_speed, cfg.max_angular_speed)
+                     -follow_cap, follow_cap)
         reach = max(cfg.follow_distance - cfg.desired_distance, 1e-6)
         ratio = clamp((green_distance - cfg.desired_distance) / reach, 0.0, 1.0)
         speed = cfg.min_speed + (cfg.forward_speed - cfg.min_speed) * ratio
