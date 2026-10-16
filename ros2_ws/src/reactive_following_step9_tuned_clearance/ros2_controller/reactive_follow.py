@@ -20,7 +20,7 @@ from geometry_msgs.msg import Twist
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import Bool, String, Float64MultiArray
-from reactive_logic import FollowParameters, follow_command
+from reactive_logic import FollowParameters, clamp, follow_command
 from sensor_snapshot import parse_snapshot
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "robots.json"
@@ -37,7 +37,12 @@ def load_config(path=CONFIG_PATH, overrides=None):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if set(data) != set(ROBOT_NAMES):
         raise ValueError("Expected all five robot configs")
-    allowed = set(FollowParameters.__dataclass_fields__)
+    # steering_gain in robots.json was tuned for the old control law and
+    # saturates this one over most of the camera cone; take it from
+    # FollowParameters (or --steering-gain) instead. Per-robot
+    # base_angular_speed and forward_speed are still honoured, so the robots
+    # keep their individual base curves.
+    allowed = set(FollowParameters.__dataclass_fields__) - {"steering_gain"}
     result = {}
     for name, settings in data.items():
         kwargs = {k: v for k, v in settings.items() if k in allowed}
@@ -69,6 +74,8 @@ class ReactiveFollower(Node):
         self.target_losses = 0
         self.collisions = 0
         self.last_tick = None
+        self.last_v = 0.0
+        self.last_w = 0.0
         ns = "/" + name
         self.create_subscription(Float64MultiArray, ns + "/local_sensors",
                                  self.on_local_sensors, 10)
@@ -107,6 +114,16 @@ class ReactiveFollower(Node):
             ranges = self.snapshot[-1]
             v, w, mode = follow_command(distance, bearing, ranges, self.cfg,
                                         oncoming_d, oncoming_b)
+
+        # Acceleration limits: ramp toward the commanded values rather than
+        # stepping to them, so a target appearing at the edge of the cone does
+        # not produce an instant full-rate swing.
+        if dt > 0.0:
+            dv = self.cfg.max_linear_accel * dt
+            dw = self.cfg.max_angular_accel * dt
+            v = clamp(v, self.last_v - dv, self.last_v + dv)
+            w = clamp(w, self.last_w - dw, self.last_w + dw)
+        self.last_v, self.last_w = v, w
 
         if mode in ('FOLLOW', 'YIELD_TURN'):
             self.following_s += dt

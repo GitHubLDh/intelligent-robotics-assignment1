@@ -32,7 +32,12 @@ class FollowParameters:
     # reduce it, and only when explicitly enabled.
     forward_speed: float = 0.15
     # The experiment variable of slide 7: no following / weak / strong turning.
-    steering_gain: float = 2.0
+    # 1.5 against max_angular_speed 1.1 saturates only beyond 42 deg, near the
+    # edge of the 50 deg cone. robots.json's 2.6 belongs to the OLD control
+    # law (which capped tracking at 0.85 with a different error term); reused
+    # here it saturates past 24 deg, i.e. over most of the field of view, so
+    # load_config deliberately does not inherit it.
+    steering_gain: float = 1.5
     max_angular_speed: float = 1.1
     # Open-space wander when no robot is visible.
     base_angular_speed: float = -0.20
@@ -55,6 +60,11 @@ class FollowParameters:
     # turn opposite ways and converge again.
     yield_speed: float = 0.06
     yield_turn_speed: float = 0.70
+    # Acceleration limits (slide 8). Applied by the node, which holds the
+    # previous command - the one piece of internal state here, and the kind
+    # slide 6 explicitly permits.
+    max_angular_accel: float = 2.5
+    max_linear_accel: float = 0.60
     avoid_enabled: bool = False
     avoid_range: float = 0.55
     avoid_turn_speed: float = 0.80
