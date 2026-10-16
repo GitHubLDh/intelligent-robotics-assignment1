@@ -2,7 +2,7 @@
 import math
 
 N_RAYS = 360
-SENSOR_VALUES = 4 + N_RAYS
+SENSOR_VALUES = 5 + N_RAYS
 
 
 def parse_snapshot(data):
@@ -12,8 +12,9 @@ def parse_snapshot(data):
         vals = tuple(float(x) for x in data)
     except (TypeError, ValueError):
         return None
-    scan = vals[4:]
+    scan = vals[5:]
     if not all(math.isfinite(x) and 0 < x <= 2.51 for x in scan):
         return None
     camera = tuple(vals[i] if math.isfinite(vals[i]) else None for i in range(4))
-    return camera + (scan,)
+    lane = vals[4] if math.isfinite(vals[4]) else 0.0
+    return camera + (lane, scan)

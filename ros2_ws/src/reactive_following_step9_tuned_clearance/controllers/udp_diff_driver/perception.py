@@ -82,6 +82,25 @@ def _occupant(slot, bodies, leader_index):
     return None
 
 
+def _lane_offset(body, marker):
+    """Signed distance from our camera to the leader's rear axis.
+
+    Positive means we are to the right of the lane. The follow controller
+    steers only on marker *bearing*, which is satisfied from any direction,
+    so two robots converging on one leader from different angles both read
+    bearing ~0 and drive along converging lines into each other. This term
+    tells each of them how far off the leader's lane it is, so they queue up
+    single file instead. Zero when already centred, so it adds nothing to a
+    correctly formed train.
+    """
+    ux, uy = marker[0] - body[0], marker[1] - body[1]
+    span = math.hypot(ux, uy)
+    if span < 1e-6:
+        return 0.0
+    ux, uy = ux / span, uy / span
+    return uy * marker[0] - ux * marker[1]
+
+
 def choose_follow_target(green, bodies):
     """Pick the green back whose follow slot is still free.
 
@@ -107,14 +126,17 @@ def choose_follow_target(green, bodies):
             continue
         taken_by = _occupant(slot, bodies, index)
         if taken_by is None:
-            return (distance, bearing)
+            return (distance, bearing, _lane_offset(body, marker))
         if taken_by not in {c[2] for c in ordered}:
             # The tail's own green back is not classifiable from here, so aim
             # at its body centre. That is ~0.13m short of where its marker
             # would be, which desired_rear_range's tolerance absorbs.
-            return (bodies[taken_by][3], bodies[taken_by][4])
+            # No marker for the tail, so its lane is unknown: 0.0 disables
+            # the lane term rather than guessing a direction.
+            return (bodies[taken_by][3], bodies[taken_by][4], 0.0)
         # The tail IS a green candidate; it is evaluated on its own turn.
-    return (ordered[0][0], ordered[0][1])
+    return (ordered[0][0], ordered[0][1],
+            _lane_offset(ordered[0][3], ordered[0][4]))
 
 
 def scan_markers(recognition_objects):
@@ -180,8 +202,10 @@ def scan_markers(recognition_objects):
             else:
                 uncertain += 1
 
+    target = choose_follow_target(green, bodies)
     return {
-        'rear': choose_follow_target(green, bodies),
+        'rear': target[:2] if target else None,
+        'lane_offset': target[2] if target else 0.0,
         'front': min(red) if red else None,
         'count': len(green) + len(red),
         'raw_count': raw_count,

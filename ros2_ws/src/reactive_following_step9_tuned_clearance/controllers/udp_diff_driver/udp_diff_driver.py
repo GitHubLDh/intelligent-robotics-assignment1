@@ -121,6 +121,7 @@ def main():
                 'camera_classification': ('front=%d rear=%d ambiguous=%d unmatched=%d bodies=%d' % (
                     observed['front_count'], observed['rear_count'],
                     observed['uncertain_count'], observed['unmatched_count'], observed['body_count'])),
+                'lane_offset_m': round(observed['lane_offset'], 5),
                 'lidar_ranges_m': lidar_ranges,
                 'contact': contact,
                 'contact_episodes': contact_episodes,

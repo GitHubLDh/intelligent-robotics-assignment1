@@ -114,9 +114,9 @@ class SafeFollower(Node):
         elif health != "OK":
             v, w, mode = 0.0, 0.0, "SENSOR_FAILSAFE"
         else:
-            rear_d, rear_b, front_d, front_b, ranges = self.local_snapshot
+            rear_d, rear_b, front_d, front_b, lane, ranges = self.local_snapshot
             v, w, mode = safe_command(rear_d, rear_b, front_d, front_b,
-                                      ranges, self.cfg)
+                                      ranges, self.cfg, lane)
         msg = Twist()
         msg.linear.x = float(v)
         msg.angular.z = float(w)

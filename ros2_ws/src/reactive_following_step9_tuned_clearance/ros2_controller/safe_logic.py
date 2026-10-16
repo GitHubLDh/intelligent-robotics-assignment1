@@ -55,7 +55,7 @@ def contact_context(snapshot, cfg):
     """
     if snapshot is None:
         return False, True          # fail closed: pivot, never reverse blind
-    rear_distance, rear_bearing, front_distance, front_bearing, ranges = snapshot
+    rear_distance, rear_bearing, front_distance, front_bearing, _, ranges = snapshot
     s = lidar_sectors(ranges, rear_distance, rear_bearing) if ranges is not None else None
     if s is None:
         return False, True
@@ -118,6 +118,11 @@ class SafeParameters:
     # Kept gentle: a robot that swings more than ~50 degrees drops out of its
     # own follower's camera cone, breaking a train that had already formed.
     oncoming_bias_speed: float = 0.42
+    # Pulls a follower onto its leader's rear axis instead of merely pointing
+    # at the marker. Zero offset contributes nothing, so a formed train is
+    # unaffected; it only acts on a follower approaching from off-axis.
+    lane_gain: float = 1.3
+    lane_max_turn: float = 0.45
 
 
 def marker_visible(distance, bearing):
@@ -186,7 +191,7 @@ def lidar_sectors(scan, rear_distance=None, rear_bearing=None):
 
 
 def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
-                 ranges, cfg: SafeParameters):
+                 ranges, cfg: SafeParameters, lane_offset=0.0):
     """Return (linear m/s, angular rad/s, mode) from current local sensors."""
     s = lidar_sectors(ranges, rear_distance, rear_bearing) if ranges is not None else None
     if s is None:
@@ -351,9 +356,18 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
         error = max(0, rear_distance -
                     (cfg.desired_rear_range + cfg.hold_tolerance))
         v = clamp(cfg.distance_gain * error, 0.0, cfg.follow_max_speed) * heading_factor
-        w = clamp(cfg.steering_gain * rear_bearing,
+        # Lane centring. Steering on bearing alone is satisfied from ANY
+        # direction, so two robots converging on one leader from different
+        # angles both read bearing ~0 and drive along converging lines until
+        # they touch - travelling side by side, which neither the LiDAR (blind
+        # to peers inside 0.75m) nor the camera (+/-50deg) can even detect.
+        # Pulling each of them onto the leader's rear axis makes them queue
+        # single file instead. The term vanishes once centred.
+        lane = clamp(cfg.lane_gain * (lane_offset or 0.0),
+                     -cfg.lane_max_turn, cfg.lane_max_turn)
+        w = clamp(cfg.steering_gain * rear_bearing + lane,
                   -cfg.tracking_max_turn_speed, cfg.tracking_max_turn_speed)
-        if a < .025:
+        if a < .025 and abs(lane) < .02:
             w = 0.0
         # Do not treat the CURRENT visible leader as a wall: sectors above
         # filter only geometrically compatible LiDAR returns. Other obstacles

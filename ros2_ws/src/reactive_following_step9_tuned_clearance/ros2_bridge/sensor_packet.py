@@ -1,7 +1,7 @@
 """Synchronized camera + full LiDAR snapshot; no target history/global pose.
 
 Float64MultiArray: [green distance, green bearing, red distance, red bearing,
-                    360 laser distances in meters].
+                    lane offset, 360 laser distances in meters].
 The scan's index 180 is robot +X (forward), index 90 is right.
 """
 from math import nan, isfinite
@@ -25,4 +25,9 @@ def sensor_packet(data):
             result.append(float(value) if value is not None else nan)
         except (TypeError, ValueError):
             result.append(nan)
+    lane = data.get('lane_offset_m')
+    try:
+        result.append(float(lane) if lane is not None else 0.0)
+    except (TypeError, ValueError):
+        result.append(0.0)
     return result + list(scan)
