@@ -22,6 +22,11 @@ MIN_FRONT_REAR_PROJECTION_GAP_M = 0.050
 FOLLOW_SLOT_STANDOFF_M = 0.40
 # Tolerance on that point: hold_tolerance plus cornering slack.
 SLOT_RADIUS_M = 0.26
+# A leader turning broadside fails the directional marker test (neither marker
+# projects clearly nearer) while its BODY is still detected. Within this range
+# we follow the body so a train survives the turn. Deliberately short: far
+# bodies are not plausibly the robot we were queueing behind.
+BODY_FALLBACK_RANGE_M = 2.0
 
 
 def _measurement(obj):
@@ -101,7 +106,30 @@ def _lane_offset(body, marker):
     return uy * marker[0] - ux * marker[1]
 
 
-def choose_follow_target(green, bodies):
+def _body_fallback(bodies, red_bodies):
+    """Follow a detected body when no green back can be classified.
+
+    Measured cause of trains breaking up: once the angle between a leader's
+    heading and our line of sight to it passes ~74 degrees, neither of its
+    markers projects clearly nearer, so the directional test fails closed and
+    reports nothing - even though the body is still detected in that same
+    frame. Following the body keeps the train through the turn.
+
+    Uses only the CURRENT frame: no remembered target, bearing or tracking ID.
+    Bodies carrying a classified RED front marker are skipped - those are
+    pointed at us, and following one would mean driving at an oncoming robot.
+    """
+    usable = [b for i, b in enumerate(bodies)
+              if i not in red_bodies and b[3] <= BODY_FALLBACK_RANGE_M]
+    if not usable:
+        return None
+    nearest = min(usable, key=lambda b: b[3])
+    # Heading is unknown without a classified marker, so the lane term gets
+    # 0.0 rather than a guessed direction.
+    return (nearest[3], nearest[4], 0.0)
+
+
+def choose_follow_target(green, bodies, red_bodies=frozenset()):
     """Pick the green back whose follow slot is still free.
 
     Following the *nearest* green back made two robots converge on one point
@@ -116,9 +144,12 @@ def choose_follow_target(green, bodies):
 
     Falls back to the nearest green back when every slot looks taken, so a
     robot never ends up with no target and wanders away from the group.
+
+    With no classifiable green back at all, falls back to a detected body -
+    see _body_fallback.
     """
     if not green:
-        return None
+        return _body_fallback(bodies, red_bodies)
     ordered = sorted(green, key=lambda c: c[0])
     for distance, bearing, index, body, marker in ordered:
         slot = _slot_centre(body, marker)
@@ -167,6 +198,7 @@ def scan_markers(recognition_objects):
     groups, orphan_count = _pair_to_bodies(markers, bodies)
     green = []
     red = []
+    red_bodies = set()
     uncertain = 0
     for body_index, (body, group) in enumerate(zip(bodies, groups)):
         # The body direction is a ray from THIS camera, not a global heading.
@@ -186,6 +218,7 @@ def scan_markers(recognition_objects):
             if (f[0] >= MIN_NEAR_SIDE_PROJECTION_M and
                     f[0] - r[0] >= MIN_FRONT_REAR_PROJECTION_GAP_M):
                 red.append(f[1][3:5])
+                red_bodies.add(body_index)
             elif (r[0] >= MIN_NEAR_SIDE_PROJECTION_M and
                     r[0] - f[0] >= MIN_FRONT_REAR_PROJECTION_GAP_M):
                 green.append(r[1][3:5] + (body_index, body, r[1]))
@@ -194,6 +227,7 @@ def scan_markers(recognition_objects):
         elif f:
             if f[0] >= MIN_NEAR_SIDE_PROJECTION_M:
                 red.append(f[1][3:5])
+                red_bodies.add(body_index)
             else:
                 uncertain += 1
         elif r:
@@ -202,7 +236,7 @@ def scan_markers(recognition_objects):
             else:
                 uncertain += 1
 
-    target = choose_follow_target(green, bodies)
+    target = choose_follow_target(green, bodies, red_bodies)
     return {
         'rear': target[:2] if target else None,
         'lane_offset': target[2] if target else 0.0,
