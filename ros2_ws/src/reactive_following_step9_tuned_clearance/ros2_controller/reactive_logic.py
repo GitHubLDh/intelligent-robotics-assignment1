@@ -1,17 +1,19 @@
-"""Reactive following, per Assignment 1 slide 4.
+"""Basic reactive following. Four rules, checked most-urgent first.
 
-    no detection  -> follow the base curve
-    target seen   -> constant linear speed, turn towards the NEAREST VISIBLE
-                     ROBOT; turning decreases as alignment improves
-    target lost   -> resume the base curve
+  1. something very close AND red  -> turn until the coast ahead is clear,
+                                      then drive that way
+  2. red closer than red_turn_distance           -> turn right
+  3. green closer than follow_distance           -> follow that robot
+  4. something detected beyond approach_distance -> go to it
+  otherwise                                      -> base curve
 
-Every decision uses one current sensor snapshot: no target memory, no global
-pose, no inter-robot communication (slide 6). Sensing is frontal only - a
-100 degree, 4 m camera and LiDAR - so nothing to the side or behind the robot
-is observable, and no rule may depend on it.
+Red is the front half of a robot (it is facing us), green is the rear half
+(it is facing away, so it can be followed). Sensing is frontal only: a 100
+degree, 4 m camera and LiDAR. One current snapshot per decision - no target
+memory, no global pose, no inter-robot communication.
 
-Collision avoidance and distance-dependent speed are extensions (slide 8) and
-are switched off by default so the required behaviour can be measured alone.
+Linear speed is never zero in any rule, so no arrangement of robots can
+settle into a standstill.
 """
 from dataclasses import dataclass
 import math
@@ -28,52 +30,31 @@ def clamp(v, lo, hi):
 
 @dataclass(frozen=True)
 class FollowParameters:
-    # Slide 4: the linear speed is CONSTANT. Only the extensions below may
-    # reduce it, and only when explicitly enabled.
     forward_speed: float = 0.15
-    # The experiment variable of slide 7: no following / weak / strong turning.
-    # 1.5 against max_angular_speed 1.1 saturates only beyond 42 deg, near the
-    # edge of the 50 deg cone. robots.json's 2.6 belongs to the OLD control
-    # law (which capped tracking at 0.85 with a different error term); reused
-    # here it saturates past 24 deg, i.e. over most of the field of view, so
-    # load_config deliberately does not inherit it.
+    # Never zero: a robot that stops can deadlock a whole chain behind it.
+    min_speed: float = 0.03
     steering_gain: float = 1.5
     max_angular_speed: float = 1.1
-    # Open-space wander when no robot is visible.
     base_angular_speed: float = -0.20
-    # --- extensions, slide 8 ---
-    # Distance-dependent speed. The LiDAR sits above the other robots' bodies
-    # and cannot see a peer closer than ~0.75 m, so the standoff is driven by
-    # the CAMERA's measured range to the followed robot - the only sensor that
-    # reads robot distance at close quarters. On by default because without it
-    # the specified constant-speed behaviour simply drives into the leader;
-    # --constant-speed restores the spec-pure baseline for the comparisons.
-    keep_distance: bool = True
+    turn_speed: float = 0.80
+    # Rule 4: go towards anything seen further away than this.
+    approach_distance: float = 1.00
+    # Rule 3: a green back nearer than this is followed.
+    follow_distance: float = 1.20
+    # Standoff held while following, so we close in but do not ram.
     desired_distance: float = 0.45
-    approach_margin: float = 0.35
-    # Standing still is never safe: a hold is only recoverable if something
-    # guarantees the leader moves again, and in a chain of followers nothing
-    # does - every robot holds behind the one ahead and the whole train
-    # freezes. So inside the standoff we always turn away and keep moving.
-    # Fixed clockwise, so two robots meeting turn the same absolute direction
-    # and separate; a mirrored "turn away from its bearing" would have them
-    # turn opposite ways and converge again.
-    yield_speed: float = 0.06
-    yield_turn_speed: float = 0.70
-    # Acceleration limits (slide 8). Applied by the node, which holds the
-    # previous command - the one piece of internal state here, and the kind
-    # slide 6 explicitly permits.
+    # Rule 2: a robot facing us nearer than this makes us turn right.
+    red_turn_distance: float = 0.90
+    # Rule 1: red this close is an emergency.
+    very_close_distance: float = 0.45
+    # Ahead must beat this for the coast to count as clear.
+    coast_clear_range: float = 1.00
+    # Acceleration limits, applied by the node.
     max_angular_accel: float = 2.5
     max_linear_accel: float = 0.60
-    avoid_enabled: bool = False
-    avoid_range: float = 0.55
-    avoid_turn_speed: float = 0.80
-    slow_enabled: bool = False
-    slow_range: float = 0.90
 
 
-def target_visible(distance, bearing):
-    """A robot is usable only inside the real sensor envelope."""
+def visible(distance, bearing):
     return (distance is not None and bearing is not None and
             math.isfinite(distance) and math.isfinite(bearing) and
             0.0 < distance <= RANGE_MAX and abs(bearing) <= HALF_FOV)
@@ -84,73 +65,62 @@ def beam_angle(index, beams=N_BEAMS):
     return -HALF_FOV + FIELD_OF_VIEW * index / (beams - 1)
 
 
-def sector_min(scan, low, high):
-    """Nearest return with a beam angle in [low, high], else RANGE_MAX."""
-    values = [d for i, d in enumerate(scan) if low <= beam_angle(i) <= high]
-    return min(values) if values else RANGE_MAX
-
-
-def scan_sectors(scan):
-    """Frontal clearances only. A 100 deg sensor has no side or rear view."""
+def clearance_ahead(scan, half_width=math.radians(15)):
+    """Nearest LiDAR return in the forward cone, or None if the scan is bad."""
     if (scan is None or len(scan) != N_BEAMS or
             not all(isinstance(d, (int, float)) and math.isfinite(d) and
                     0 < d <= RANGE_MAX + 0.01 for d in scan)):
         return None
-    return {
-        'ahead': sector_min(scan, math.radians(-12), math.radians(12)),
-        'left': sector_min(scan, math.radians(10), HALF_FOV),
-        'right': sector_min(scan, -HALF_FOV, math.radians(-10)),
-    }
+    ahead = [d for i, d in enumerate(scan) if abs(beam_angle(i)) <= half_width]
+    return min(ahead) if ahead else RANGE_MAX
 
 
-def follow_command(target_distance, target_bearing, ranges, cfg,
-                   oncoming_distance=None, oncoming_bearing=None):
-    """Return (linear m/s, angular rad/s, mode) for the current snapshot.
-
-    oncoming_* is the camera's front-marker reading: a robot whose FRONT faces
-    us, i.e. one driving at us rather than one we are following.
-    """
-    sectors = scan_sectors(ranges)
-    if sectors is None:
+def follow_command(green_distance, green_bearing,
+                   red_distance, red_bearing, ranges, cfg):
+    """Return (linear m/s, angular rad/s, mode) for the current snapshot."""
+    ahead = clearance_ahead(ranges)
+    if ahead is None:
         return 0.0, 0.0, 'SENSOR_FAILSAFE'
 
-    seen = target_visible(target_distance, target_bearing)
-    speed = cfg.forward_speed
+    green = visible(green_distance, green_bearing)
+    red = visible(red_distance, red_bearing)
+    right = -min(cfg.turn_speed, cfg.max_angular_speed)
 
-    # Extension (slide 8): ease off when closing on something ahead.
-    if cfg.slow_enabled and sectors['ahead'] < cfg.slow_range:
-        reach = max(cfg.slow_range - cfg.avoid_range, 1e-6)
-        speed *= clamp((sectors['ahead'] - cfg.avoid_range) / reach, 0.0, 1.0)
+    # 1. Something very close and facing us. Turn until the way ahead is
+    #    actually clear, then take it. Both robots turn right, so a head-on
+    #    pair separates instead of mirroring each other.
+    if red and red_distance < cfg.very_close_distance:
+        if ahead < cfg.coast_clear_range:
+            return cfg.min_speed, right, 'ESCAPE_TURN'
+        return cfg.forward_speed, 0.0, 'ESCAPE_GO'
 
-    # Extension (slide 8): frontal collision avoidance. Turn toward whichever
-    # side of the cone is more open - a frontal sensor can still compare its
-    # own left and right halves, which is the only asymmetry available.
-    if cfg.avoid_enabled and sectors['ahead'] < cfg.avoid_range:
-        direction = 1.0 if sectors['left'] >= sectors['right'] else -1.0
-        turn = direction * min(cfg.avoid_turn_speed, cfg.max_angular_speed)
-        return speed, turn, 'AVOID'
+    # 2. A robot facing us, close but not yet critical: turn right.
+    if red and red_distance < cfg.red_turn_distance:
+        return cfg.forward_speed, right, 'AVOID_RED'
 
-    if seen:
-        # "Turn strongly towards the nearest visible robot; turning decreases
-        # as alignment improves" - proportional control does exactly that,
-        # and steering_gain is the weak/strong knob the experiments compare.
-        turn = clamp(cfg.steering_gain * target_bearing,
+    # 3. A green back within following range: steer onto it, easing off so we
+    #    settle near desired_distance rather than driving into it. The speed
+    #    floor means a follower never stops, so a chain cannot freeze.
+    if green and green_distance < cfg.follow_distance:
+        turn = clamp(cfg.steering_gain * green_bearing,
                      -cfg.max_angular_speed, cfg.max_angular_speed)
-        if cfg.keep_distance:
-            # Ease to a stop as the gap closes to desired_distance. Steering
-            # is untouched, so a held robot still tracks its leader and
-            # resumes the moment the leader pulls away.
-            gap = target_distance - cfg.desired_distance
-            speed *= clamp(gap / max(cfg.approach_margin, 1e-6), 0.0, 1.0)
-            if speed <= 0.005:
-                # Too close. Never stop - turn away and keep rolling, so the
-                # gap reopens by itself and no chain of robots can deadlock.
-                return (cfg.yield_speed,
-                        -min(cfg.yield_turn_speed, cfg.max_angular_speed),
-                        'YIELD_TURN')
+        reach = max(cfg.follow_distance - cfg.desired_distance, 1e-6)
+        ratio = clamp((green_distance - cfg.desired_distance) / reach, 0.0, 1.0)
+        speed = cfg.min_speed + (cfg.forward_speed - cfg.min_speed) * ratio
         return speed, turn, 'FOLLOW'
 
-    # No robot in view: base curve. Also the specified response to a target
-    # loss, which is why no recovery or memory of the lost target exists.
-    return speed, clamp(cfg.base_angular_speed,
-                        -cfg.max_angular_speed, cfg.max_angular_speed), 'BASE_CURVE'
+    # 4. Something is out there, further off: head towards it.
+    candidates = [(green_distance, green_bearing)] if green else []
+    if red:
+        candidates.append((red_distance, red_bearing))
+    if candidates:
+        distance, bearing = min(candidates)
+        if distance >= cfg.approach_distance:
+            turn = clamp(cfg.steering_gain * bearing,
+                         -cfg.max_angular_speed, cfg.max_angular_speed)
+            return cfg.forward_speed, turn, 'APPROACH'
+
+    # Nothing to act on: wander on the base curve.
+    return cfg.forward_speed, clamp(cfg.base_angular_speed,
+                                    -cfg.max_angular_speed,
+                                    cfg.max_angular_speed), 'BASE_CURVE'

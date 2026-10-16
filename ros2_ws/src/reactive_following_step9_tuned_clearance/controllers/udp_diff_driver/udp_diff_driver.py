@@ -104,8 +104,8 @@ def main():
                 continue
             last_tx = now
             observed = scan_markers(camera.getRecognitionObjects())
-            # Follow the GREEN rear marker - the back of another robot - not
-            # just the nearest body, so following stays directional.
+            # rear = nearest GREEN half (a robot facing away, followable),
+            # front = nearest RED half (a robot facing us).
             rear, front = observed['rear'], observed['front']
             lidar_ranges = combine_layers(lidar.getRangeImage())
             telemetry = {
@@ -120,10 +120,8 @@ def main():
                 'count': observed['count'],
                 'raw_recognition_count': observed['raw_count'],
                 'recognition_models': observed['model_types'],
-                'camera_classification': ('front=%d rear=%d ambiguous=%d unmatched=%d bodies=%d' % (
-                    observed['front_count'], observed['rear_count'],
-                    observed['uncertain_count'], observed['unmatched_count'], observed['body_count'])),
-                'lane_offset_m': round(observed['lane_offset'], 5),
+                'camera_classification': ('red=%d green=%d' % (
+                    observed['front_count'], observed['rear_count'])),
                 'lidar_ranges_m': lidar_ranges,
                 'contact': contact,
                 'contact_episodes': contact_episodes,

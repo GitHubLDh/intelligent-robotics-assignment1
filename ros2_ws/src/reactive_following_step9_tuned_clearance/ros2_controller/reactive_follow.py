@@ -109,11 +109,12 @@ class ReactiveFollower(Node):
         if stale:
             v, w, mode, bearing = 0.0, 0.0, "SENSOR_FAILSAFE", None
         else:
-            distance, bearing = self.snapshot[0], self.snapshot[1]
-            oncoming_d, oncoming_b = self.snapshot[2], self.snapshot[3]
+            green_d, green_b = self.snapshot[0], self.snapshot[1]
+            red_d, red_b = self.snapshot[2], self.snapshot[3]
+            bearing = green_b
             ranges = self.snapshot[-1]
-            v, w, mode = follow_command(distance, bearing, ranges, self.cfg,
-                                        oncoming_d, oncoming_b)
+            v, w, mode = follow_command(green_d, green_b, red_d, red_b,
+                                        ranges, self.cfg)
 
         # Acceleration limits: ramp toward the commanded values rather than
         # stepping to them, so a target appearing at the edge of the cone does
@@ -125,13 +126,13 @@ class ReactiveFollower(Node):
             w = clamp(w, self.last_w - dw, self.last_w + dw)
         self.last_v, self.last_w = v, w
 
-        if mode in ('FOLLOW', 'YIELD_TURN'):
+        if mode in ('FOLLOW', 'APPROACH'):
             self.following_s += dt
             if bearing is not None:
                 self.bearing_error_sum += abs(bearing)
                 self.bearing_error_n += 1
-        if (self.last_mode in ('FOLLOW', 'YIELD_TURN')
-                and mode not in ('FOLLOW', 'YIELD_TURN')):
+        if (self.last_mode in ('FOLLOW', 'APPROACH')
+                and mode not in ('FOLLOW', 'APPROACH')):
             self.target_losses += 1
 
         msg = Twist()

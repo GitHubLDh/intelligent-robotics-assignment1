@@ -49,87 +49,149 @@ PROTO SimpleDiffRobot [
           occlusion 2
         }
       }
-      # Directional recognition markers. Thin bright face + larger opaque black
-      # backing: the colored face is exposed only outwards, not around edges.
-      # Geometry is inside the original bumper envelope and does not modify
-      # physical contacts, LiDAR position or physics. Webots Recognition may
-      # still return hidden marker volumes; perception.py also classifies each
-      # candidate relative to the CURRENT camera-observed robot body.
-      Pose {
-        translation 0.119 0 0.005
-        children [
-          Shape {
-            appearance PBRAppearance {
-              baseColor 0.015 0.018 0.025
-              roughness 1
-              metalness 0
-            }
-            geometry Box { size 0.009 0.112 0.063 }
-          }
-        ]
-      }
+      # Directional recognition by BODY HALVES, not small plaques: the front
+      # half of the chassis is red, the rear half green. A half shell stays
+      # visible across almost the whole viewing circle, where a flat plaque
+      # shrinks to nothing as a robot turns away - which is what made leaders
+      # unfollowable mid-turn. Each Solid is offset to its own side because
+      # Webots recognition reports the Solid ORIGIN; sharing the centre would
+      # make the two halves indistinguishable in position.
       Solid {
-        translation 0.126 0 0.005
-        name "front_red_mark"
-        model "front_marker"
+        translation 0.060 0 0.005
+        name "front_red_half"
+        model "front_half"
         recognitionColors [ 1 0 0 ]
         children [
           Shape {
             appearance PBRAppearance {
-              baseColor 1 0.04 0.04
-              emissiveColor 0.8 0 0
+              baseColor 1 0 0
+              emissiveColor 0.6 0 0
               metalness 0
               roughness 0.6
             }
-            # Widened 0.088 -> 0.160 so the leader's back still presents a
-            # usable target when it turns away from the follower. Stays inside
-            # the 0.186 backing above and well inside MAX_MARKER_TO_BODY_M.
-            geometry Box { size 0.002 0.160 0.056 }
-          }
-        ]
-      }
-      Pose {
-        translation -0.119 0 0.005
-        children [
-          Shape {
-            appearance PBRAppearance {
-              baseColor 0.015 0.018 0.025
-              roughness 1
-              metalness 0
+            geometry IndexedFaceSet {
+              coord Coordinate {
+                point [
+                  -0.05588 -0.11793 -0.03750
+                  -0.05588 -0.11793 0.03750
+                  -0.03031 -0.11420 -0.03750
+                  -0.03031 -0.11420 0.03750
+                  -0.00617 -0.10500 -0.03750
+                  -0.00617 -0.10500 0.03750
+                  0.01540 -0.09077 -0.03750
+                  0.01540 -0.09077 0.03750
+                  0.03335 -0.07218 -0.03750
+                  0.03335 -0.07218 0.03750
+                  0.04682 -0.05014 -0.03750
+                  0.04682 -0.05014 0.03750
+                  0.05517 -0.02568 -0.03750
+                  0.05517 -0.02568 0.03750
+                  0.05800 0.00000 -0.03750
+                  0.05800 0.00000 0.03750
+                  0.05517 0.02568 -0.03750
+                  0.05517 0.02568 0.03750
+                  0.04682 0.05014 -0.03750
+                  0.04682 0.05014 0.03750
+                  0.03335 0.07218 -0.03750
+                  0.03335 0.07218 0.03750
+                  0.01540 0.09077 -0.03750
+                  0.01540 0.09077 0.03750
+                  -0.00617 0.10500 -0.03750
+                  -0.00617 0.10500 0.03750
+                  -0.03031 0.11420 -0.03750
+                  -0.03031 0.11420 0.03750
+                  -0.05588 0.11793 -0.03750
+                  -0.05588 0.11793 0.03750
+                ]
+              }
+              coordIndex [
+                  0 2 3 1 -1
+                  2 4 5 3 -1
+                  4 6 7 5 -1
+                  6 8 9 7 -1
+                  8 10 11 9 -1
+                  10 12 13 11 -1
+                  12 14 15 13 -1
+                  14 16 17 15 -1
+                  16 18 19 17 -1
+                  18 20 21 19 -1
+                  20 22 23 21 -1
+                  22 24 25 23 -1
+                  24 26 27 25 -1
+                  26 28 29 27 -1
+              ]
             }
-            # Widened with the green face below, and kept larger than it so
-            # the colour is still exposed only rearwards, never around edges.
-            geometry Box { size 0.009 0.186 0.072 }
           }
         ]
       }
       Solid {
-        translation -0.126 0 0.005
-        name "rear_green_mark"
-        model "rear_marker"
+        translation -0.060 0 0.005
+        name "rear_green_half"
+        model "rear_half"
         recognitionColors [ 0 1 0 ]
         children [
           Shape {
             appearance PBRAppearance {
-              baseColor 0.02 1 0.09
-              emissiveColor 0 0.8 0.03
+              baseColor 0 1 0
+              emissiveColor 0 0.6 0
               metalness 0
               roughness 0.6
             }
-            # Widened 0.088 -> 0.160 so the leader's back still presents a
-            # usable target when it turns away from the follower. Stays inside
-            # the 0.186 backing above and well inside MAX_MARKER_TO_BODY_M.
-            geometry Box { size 0.002 0.160 0.056 }
+            geometry IndexedFaceSet {
+              coord Coordinate {
+                point [
+                  0.05588 0.11793 -0.03750
+                  0.05588 0.11793 0.03750
+                  0.03031 0.11420 -0.03750
+                  0.03031 0.11420 0.03750
+                  0.00617 0.10500 -0.03750
+                  0.00617 0.10500 0.03750
+                  -0.01540 0.09077 -0.03750
+                  -0.01540 0.09077 0.03750
+                  -0.03335 0.07218 -0.03750
+                  -0.03335 0.07218 0.03750
+                  -0.04682 0.05014 -0.03750
+                  -0.04682 0.05014 0.03750
+                  -0.05517 0.02568 -0.03750
+                  -0.05517 0.02568 0.03750
+                  -0.05800 0.00000 -0.03750
+                  -0.05800 0.00000 0.03750
+                  -0.05517 -0.02568 -0.03750
+                  -0.05517 -0.02568 0.03750
+                  -0.04682 -0.05014 -0.03750
+                  -0.04682 -0.05014 0.03750
+                  -0.03335 -0.07218 -0.03750
+                  -0.03335 -0.07218 0.03750
+                  -0.01540 -0.09077 -0.03750
+                  -0.01540 -0.09077 0.03750
+                  0.00617 -0.10500 -0.03750
+                  0.00617 -0.10500 0.03750
+                  0.03031 -0.11420 -0.03750
+                  0.03031 -0.11420 0.03750
+                  0.05588 -0.11793 -0.03750
+                  0.05588 -0.11793 0.03750
+                ]
+              }
+              coordIndex [
+                  0 2 3 1 -1
+                  2 4 5 3 -1
+                  4 6 7 5 -1
+                  6 8 9 7 -1
+                  8 10 11 9 -1
+                  10 12 13 11 -1
+                  12 14 15 13 -1
+                  14 16 17 15 -1
+                  16 18 19 17 -1
+                  18 20 21 19 -1
+                  20 22 23 21 -1
+                  22 24 25 23 -1
+                  24 26 27 25 -1
+                  26 28 29 27 -1
+              ]
+            }
           }
         ]
       }
-      # Three-layer 360-degree LiDAR: current, local range readings only.
-      # LiDAR plane at z=0.155m (robot origin z=0.085 + local 0.070).
-      # With +/-0.04rad vertical layers, lowest rear ray at 0.12m
-      # is above the green rear marker (top approximately z=0.130m).
-      # It remains below the arena's 0.19m low walls at close range.
-      # This avoids likely self-returns without masking arbitrary near-range
-      # scan samples, which could hide a genuine close obstacle.
       # World-space z assumes robot is upright on level ground.
       Lidar {
         translation 0 0 0.070
