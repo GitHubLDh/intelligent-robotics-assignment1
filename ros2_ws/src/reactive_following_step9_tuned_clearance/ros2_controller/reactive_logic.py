@@ -85,8 +85,15 @@ class FollowParameters:
     # contact it reports 4 m of open space; the camera is the only sensor
     # that can see the robot we are touching.
     coast_cone: float = 0.60
-    # Acceleration limits, applied by the node.
+    # Acceleration limits, applied by the node. Asymmetric on purpose: the
+    # limiter exists to stop a target appearing at the edge of the cone from
+    # producing an instant full-rate swing, which is an INCREASE in |w|.
+    # Unwinding a turn back down to the gentle base curve was never the
+    # hazard, and limiting it equally meant a robot entering BASE_CURVE from
+    # an avoid turn needed ~8 ticks to reach its base_angular_speed - longer
+    # than many base-curve spells last, so it never actually drove the curve.
     max_angular_accel: float = 2.5
+    max_angular_decel: float = 6.0
     max_linear_accel: float = 0.60
 
 

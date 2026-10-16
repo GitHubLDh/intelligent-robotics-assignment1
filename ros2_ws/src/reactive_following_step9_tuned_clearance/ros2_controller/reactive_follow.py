@@ -130,7 +130,12 @@ class ReactiveFollower(Node):
         # not produce an instant full-rate swing.
         if dt > 0.0:
             dv = self.cfg.max_linear_accel * dt
-            dw = self.cfg.max_angular_accel * dt
+            # Settling toward a gentler turn is not the thing the limiter
+            # guards against, so it is allowed to happen faster.
+            tightening = abs(w) > abs(self.last_w)
+            rate = (self.cfg.max_angular_accel if tightening
+                    else self.cfg.max_angular_decel)
+            dw = rate * dt
             v = clamp(v, self.last_v - dv, self.last_v + dv)
             w = clamp(w, self.last_w - dw, self.last_w + dw)
         self.last_v, self.last_w = v, w
