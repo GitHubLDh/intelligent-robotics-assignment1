@@ -47,6 +47,21 @@ class SafeParameters:
     lidar_emergency: float = 0.28
     lidar_side_avoid: float = 0.28
     lidar_rear_reverse_clear: float = 0.55
+    # A red front marker within this distance of a green back means that back
+    # already has a follower: a robot's own markers are ~0.25m apart, so a
+    # separate robot parked at desired_rear_range behind it lands well inside.
+    slot_taken_range: float = 0.55
+    # Standoff kept from a slot occupant while queueing around to its rear.
+    # Must exceed lidar_front_avoid so queueing resolves before AVOID_FRONT.
+    queue_standoff: float = 0.30
+    queue_turn_speed: float = 0.45
+    # Range at which an oncoming robot starts biasing us right. Deliberately
+    # much larger than head_on_range so the paths diverge before a head-on
+    # can develop, and so backing off cannot drop us out of the behaviour.
+    oncoming_range: float = 1.80
+    # Kept gentle: a robot that swings more than ~50 degrees drops out of its
+    # own follower's camera cone, breaking a train that had already formed.
+    oncoming_bias_speed: float = 0.42
 
 
 def marker_visible(distance, bearing):
@@ -62,6 +77,16 @@ def beam_angle(i, beams=N_BEAMS):
 
 def angular_distance(a, b):
     return abs((a - b + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def marker_gap(d1, b1, d2, b2):
+    """Distance between two markers seen in the CURRENT camera frame.
+
+    Law of cosines on two polar measurements from our own camera. This needs
+    no communication, no global pose and no history, and it does not require
+    one marker to occlude the other, so it works from any approach angle.
+    """
+    return math.sqrt(max(0.0, d1*d1 + d2*d2 - 2.0*d1*d2*math.cos(b1 - b2)))
 
 
 def lidar_sectors(scan, rear_distance=None, rear_bearing=None):
@@ -84,8 +109,14 @@ def lidar_sectors(scan, rear_distance=None, rear_bearing=None):
         # Marker distance is camera-relative, from x=+0.13m. LiDAR origin is
         # near robot center; allow for robot body and marker offset.
         half_width = clamp(0.17 / max(rear_distance or 1.0, .3), .16, .38)
+        # Our camera sits at x=+0.130 and the leader's green mark at its own
+        # x=-0.126, while our LiDAR is at body centre: the leader's return is
+        # therefore about 0.13m FARTHER than the marker reading, never nearer.
+        # The old -0.32 lower bound erased anything up to 32cm closer than the
+        # marker - including a rival robot converging on the same slot, which
+        # left it invisible to the side and diagonal avoidance below.
         is_leader = (green and angular_distance(a, rear_bearing) < half_width and
-                     rear_distance - .32 <= d <= rear_distance + .38 and d > .20)
+                     rear_distance - .08 <= d <= rear_distance + .38 and d > .20)
         compensated.append(RANGE_MAX if is_leader else d)
 
     def nearest(values, angle, halfwidth):
@@ -120,7 +151,19 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
     bl, br = s['rear_left'], s['rear_right']
     green = marker_visible(rear_distance, rear_bearing)
     red = marker_visible(front_distance, front_bearing)
-    red_ahead = (red and abs(front_bearing) < .85 and front_distance <= cfg.head_on_range
+    # A red front marker sitting right next to the green back we can see means
+    # that back is already taken: the red-marked robot is pointed at it, i.e.
+    # following it. Such a robot is NOT oncoming - its red marker faces its own
+    # leader, not us - so it must not trigger the head-on rules. When a robot
+    # is directly behind its leader we see its green back instead (perception
+    # reports the nearest green), so this only fires on angled approaches,
+    # which is exactly the case that produced the sideways collisions.
+    slot_taken = (green and red and
+                  marker_gap(rear_distance, rear_bearing,
+                             front_distance, front_bearing) < cfg.slot_taken_range)
+    oncoming = red and not slot_taken
+    red_ahead = (oncoming and abs(front_bearing) < .85
+                 and front_distance <= cfg.head_on_range
                  and (not green or front_distance <= rear_distance + .18))
 
     # Deterministic clockwise-only avoidance is deliberately conservative.
@@ -160,7 +203,7 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
 
     # In FOLLOW_HOLD, both wheels stop. Keep recognized stationary targets
     # visible, with no remembered bearing or target position.
-    if (green and not red_ahead and
+    if (green and not red_ahead and not slot_taken and
         rear_distance <= cfg.desired_rear_range + cfg.hold_tolerance and
         min(l, r) >= .19 and s['raw_front'] >= .18):
         return 0.0, 0.0, 'FOLLOW_HOLD'
@@ -215,7 +258,10 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
             return -.045, headon_direction * cfg.head_on_reverse_turn_speed, 'YIELD_REVERSE_TURN'
         if f < .48 or (r if headon_direction < 0 else l) < .30:
             return 0.0, headon_w, 'YIELD_TURN'
-        return min(.025, cfg.forward_speed), headon_w, 'YIELD'
+        # Never advance toward something this close. The old forward creep
+        # closed the gap again while turning, feeding the back-off/re-approach
+        # cycle. PASS_RIGHT below is what now makes forward progress safely.
+        return 0.0, headon_w, 'YIELD'
 
     # Use front+side coverage to prevent reverse and turning into a wall.
     if f < cfg.lidar_front_avoid:
@@ -257,6 +303,27 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
         fl > f + .30 and fr > f + .30 and min(l,r) > .36):
         return 0.0, 0.0, 'PROXIMITY_HOLD'
 
+    # That green back belongs to the red-marked robot beside it. Do not contest
+    # the slot - two robots driving to the same point behind one leader is what
+    # collided them sideways. Queue up behind the OCCUPANT instead: hold a
+    # standoff and swing around to the side of it facing away from its leader,
+    # where its own green back comes into view and normal FOLLOW takes over.
+    # Crucially this still drives us toward the group, so a robot that loses a
+    # slot does not wander off and separate trains keep converging.
+    if slot_taken:
+        away = 1.0 if front_bearing > rear_bearing else -1.0
+        hold = cfg.desired_rear_range + cfg.queue_standoff
+        if front_distance <= hold:
+            return 0.0, away * min(cfg.queue_turn_speed,
+                                   cfg.max_angular_speed), 'QUEUE_SWING'
+        v = clamp(cfg.distance_gain * (front_distance - hold),
+                  0.0, cfg.follow_max_speed)
+        if f < cfg.lidar_slow_range:
+            v = min(v, max(0.0, .45 * (f - cfg.lidar_front_avoid)))
+        w = clamp(cfg.steering_gain * front_bearing + away * .30,
+                  -cfg.tracking_max_turn_speed, cfg.tracking_max_turn_speed)
+        return v, w, 'QUEUE_APPROACH'
+
     if green:
         a = abs(rear_bearing)
         heading_factor = clamp((cfg.tracking_edge_bearing - a) /
@@ -282,6 +349,21 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
     v = cfg.forward_speed
     if f < cfg.lidar_slow_range:
         v = min(v, max(0.0, .50 * (f - cfg.lidar_front_avoid)))
+    # Right-hand passing rule, applied EARLY. The head-on rules above only
+    # engage inside head_on_range (0.70m) and the controller then forgot the
+    # conflict the instant the gap grew past it: robots backed off, fell
+    # straight through to BASE_CURVE, re-aimed and drove into each other
+    # again. Biasing from oncoming_range (1.80m) means the two paths have
+    # already diverged before a head-on can develop, and backing off cannot
+    # drop us out of the behaviour. Both robots turn right, so they separate
+    # symmetrically. We keep driving forward rather than pivoting: an arc
+    # buys lateral separation with far less heading change than a spin, so a
+    # robot already following us keeps our rear marker in its camera cone.
+    if oncoming and abs(front_bearing) < 1.0 and front_distance < cfg.oncoming_range:
+        urgency = clamp((cfg.oncoming_range - front_distance) /
+                        max(cfg.oncoming_range - cfg.head_on_range, .01), .25, 1.0)
+        return v, -clamp(cfg.oncoming_bias_speed * urgency,
+                         0.0, cfg.max_angular_speed), 'PASS_RIGHT'
     # Preserve clockwise clearance steering near an obstacle, but do NOT
     # bias the base curve from 1.55m away. Current instantaneous scan ONLY.
     near = min(f, fl, fr)
