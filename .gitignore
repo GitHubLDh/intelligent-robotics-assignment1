@@ -16,6 +16,9 @@ __pycache__/
 # Webots
 *.wbproj
 
+# run_trains.sh output logs (local debugging only)
+/logs/
+
 # Large media — keep out of git, share via Drive/Moodle instead
 *.mp4
 *.mov
