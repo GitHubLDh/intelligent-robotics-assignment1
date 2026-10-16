@@ -47,14 +47,6 @@ class SafeParameters:
     lidar_emergency: float = 0.28
     lidar_side_avoid: float = 0.28
     lidar_rear_reverse_clear: float = 0.55
-    # A red front marker within this distance of a green back means that back
-    # already has a follower: a robot's own markers are ~0.25m apart, so a
-    # separate robot parked at desired_rear_range behind it lands well inside.
-    slot_taken_range: float = 0.55
-    # Standoff kept from a slot occupant while queueing around to its rear.
-    # Must exceed lidar_front_avoid so queueing resolves before AVOID_FRONT.
-    queue_standoff: float = 0.30
-    queue_turn_speed: float = 0.45
     # Range at which an oncoming robot starts biasing us right. Deliberately
     # much larger than head_on_range so the paths diverge before a head-on
     # can develop, and so backing off cannot drop us out of the behaviour.
@@ -77,16 +69,6 @@ def beam_angle(i, beams=N_BEAMS):
 
 def angular_distance(a, b):
     return abs((a - b + math.pi) % (2.0 * math.pi) - math.pi)
-
-
-def marker_gap(d1, b1, d2, b2):
-    """Distance between two markers seen in the CURRENT camera frame.
-
-    Law of cosines on two polar measurements from our own camera. This needs
-    no communication, no global pose and no history, and it does not require
-    one marker to occlude the other, so it works from any approach angle.
-    """
-    return math.sqrt(max(0.0, d1*d1 + d2*d2 - 2.0*d1*d2*math.cos(b1 - b2)))
 
 
 def lidar_sectors(scan, rear_distance=None, rear_bearing=None):
@@ -151,18 +133,11 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
     bl, br = s['rear_left'], s['rear_right']
     green = marker_visible(rear_distance, rear_bearing)
     red = marker_visible(front_distance, front_bearing)
-    # A red front marker sitting right next to the green back we can see means
-    # that back is already taken: the red-marked robot is pointed at it, i.e.
-    # following it. Such a robot is NOT oncoming - its red marker faces its own
-    # leader, not us - so it must not trigger the head-on rules. When a robot
-    # is directly behind its leader we see its green back instead (perception
-    # reports the nearest green), so this only fires on angled approaches,
-    # which is exactly the case that produced the sideways collisions.
-    slot_taken = (green and red and
-                  marker_gap(rear_distance, rear_bearing,
-                             front_distance, front_bearing) < cfg.slot_taken_range)
-    oncoming = red and not slot_taken
-    red_ahead = (oncoming and abs(front_bearing) < .85
+    # Contested follow slots are resolved in perception.py, which can see the
+    # body positions this controller never receives: it reports the tail of a
+    # train rather than its nearest member, so rear_distance/rear_bearing are
+    # already a slot nobody else owns.
+    red_ahead = (red and abs(front_bearing) < .85
                  and front_distance <= cfg.head_on_range
                  and (not green or front_distance <= rear_distance + .18))
 
@@ -203,7 +178,7 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
 
     # In FOLLOW_HOLD, both wheels stop. Keep recognized stationary targets
     # visible, with no remembered bearing or target position.
-    if (green and not red_ahead and not slot_taken and
+    if (green and not red_ahead and
         rear_distance <= cfg.desired_rear_range + cfg.hold_tolerance and
         min(l, r) >= .19 and s['raw_front'] >= .18):
         return 0.0, 0.0, 'FOLLOW_HOLD'
@@ -303,27 +278,6 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
         fl > f + .30 and fr > f + .30 and min(l,r) > .36):
         return 0.0, 0.0, 'PROXIMITY_HOLD'
 
-    # That green back belongs to the red-marked robot beside it. Do not contest
-    # the slot - two robots driving to the same point behind one leader is what
-    # collided them sideways. Queue up behind the OCCUPANT instead: hold a
-    # standoff and swing around to the side of it facing away from its leader,
-    # where its own green back comes into view and normal FOLLOW takes over.
-    # Crucially this still drives us toward the group, so a robot that loses a
-    # slot does not wander off and separate trains keep converging.
-    if slot_taken:
-        away = 1.0 if front_bearing > rear_bearing else -1.0
-        hold = cfg.desired_rear_range + cfg.queue_standoff
-        if front_distance <= hold:
-            return 0.0, away * min(cfg.queue_turn_speed,
-                                   cfg.max_angular_speed), 'QUEUE_SWING'
-        v = clamp(cfg.distance_gain * (front_distance - hold),
-                  0.0, cfg.follow_max_speed)
-        if f < cfg.lidar_slow_range:
-            v = min(v, max(0.0, .45 * (f - cfg.lidar_front_avoid)))
-        w = clamp(cfg.steering_gain * front_bearing + away * .30,
-                  -cfg.tracking_max_turn_speed, cfg.tracking_max_turn_speed)
-        return v, w, 'QUEUE_APPROACH'
-
     if green:
         a = abs(rear_bearing)
         heading_factor = clamp((cfg.tracking_edge_bearing - a) /
@@ -359,7 +313,7 @@ def safe_command(rear_distance, rear_bearing, front_distance, front_bearing,
     # symmetrically. We keep driving forward rather than pivoting: an arc
     # buys lateral separation with far less heading change than a spin, so a
     # robot already following us keeps our rear marker in its camera cone.
-    if oncoming and abs(front_bearing) < 1.0 and front_distance < cfg.oncoming_range:
+    if red and abs(front_bearing) < 1.0 and front_distance < cfg.oncoming_range:
         urgency = clamp((cfg.oncoming_range - front_distance) /
                         max(cfg.oncoming_range - cfg.head_on_range, .01), .25, 1.0)
         return v, -clamp(cfg.oncoming_bias_speed * urgency,
