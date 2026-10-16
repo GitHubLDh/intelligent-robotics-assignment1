@@ -85,6 +85,7 @@ class ReactiveFollower(Node):
         self.last_tick = None
         self.last_v = 0.0
         self.last_w = 0.0
+        self.closest_red = float('inf')
         ns = "/" + name
         self.create_subscription(Float64MultiArray, ns + "/local_sensors",
                                  self.on_local_sensors, 10)
@@ -115,12 +116,19 @@ class ReactiveFollower(Node):
         self.last_tick = now
         stale = (self.snapshot_at is None or now - self.snapshot_at > FRESH_S
                  or self.snapshot is None)
+        green_d = red_d = red_b = None
         if stale:
             v, w, mode, bearing = 0.0, 0.0, "SENSOR_FAILSAFE", None
         else:
             green_d, green_b = self.snapshot[0], self.snapshot[1]
             red_d, red_b = self.snapshot[2], self.snapshot[3]
             bearing = green_b
+            # Closest approach to a robot FACING us, in centre-to-centre
+            # terms: the camera sits 0.130 ahead of our centre and the red
+            # half 0.060 ahead of theirs. Bumpers touch at 0.292 m, so this
+            # is what says whether an incident was a near miss or a hit.
+            if red_d is not None and math.isfinite(red_d):
+                self.closest_red = min(self.closest_red, red_d + 0.19)
             ranges = self.snapshot[-1]
             v, w, mode = follow_command(green_d, green_b, red_d, red_b,
                                         ranges, self.cfg)
@@ -156,17 +164,27 @@ class ReactiveFollower(Node):
         self.mode_pub.publish(String(data=mode))
         if mode != self.last_mode:
             self.last_mode = mode
-            extra = "" if bearing is None else f" bearing={bearing:+.3f}"
+            # Distance as well as bearing: without it a log cannot say how
+            # near an encounter actually came.
+            parts = []
+            if green_d is not None and bearing is not None:
+                parts.append(f"green={green_d:.2f}@{bearing:+.2f}")
+            if red_d is not None and red_b is not None:
+                parts.append(f"red={red_d:.2f}@{red_b:+.2f}")
+            extra = (" " + " ".join(parts)) if parts else ""
             self.get_logger().info(
                 f"{self.name_} {mode} v={v:.2f} w={w:+.2f}{extra}")
 
     def metrics(self):
         mean_error = (self.bearing_error_sum / self.bearing_error_n
                       if self.bearing_error_n else float('nan'))
+        closest = ('n/a' if self.closest_red == float('inf')
+                   else f'{self.closest_red:.2f}m')
         return (f"{self.name_}: following={self.following_s:6.1f}s  "
                 f"mean|bearing|={mean_error:.3f}rad  "
                 f"target_losses={self.target_losses:3d}  "
-                f"collisions={self.collisions:3d}")
+                f"collisions={self.collisions:3d}  "
+                f"closest_approach={closest}")
 
     def stop(self):
         try:
