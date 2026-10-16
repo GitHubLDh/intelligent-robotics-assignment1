@@ -108,13 +108,13 @@ class ReactiveFollower(Node):
             v, w, mode = follow_command(distance, bearing, ranges, self.cfg,
                                         oncoming_d, oncoming_b)
 
-        if mode in ('FOLLOW', 'FOLLOW_HOLD'):
+        if mode in ('FOLLOW', 'YIELD_TURN'):
             self.following_s += dt
             if bearing is not None:
                 self.bearing_error_sum += abs(bearing)
                 self.bearing_error_n += 1
-        if (self.last_mode in ('FOLLOW', 'FOLLOW_HOLD')
-                and mode not in ('FOLLOW', 'FOLLOW_HOLD')):
+        if (self.last_mode in ('FOLLOW', 'YIELD_TURN')
+                and mode not in ('FOLLOW', 'YIELD_TURN')):
             self.target_losses += 1
 
         msg = Twist()

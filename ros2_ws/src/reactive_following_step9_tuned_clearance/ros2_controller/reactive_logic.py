@@ -46,11 +46,13 @@ class FollowParameters:
     keep_distance: bool = True
     desired_distance: float = 0.45
     approach_margin: float = 0.35
-    # Holding station in front of a robot that is FACING us is a deadlock:
-    # neither robot loses the target, so neither ever resumes the base curve.
-    # Yield instead. Fixed clockwise, so both robots turn the same absolute
-    # direction and separate - a mirrored "turn away from its bearing" would
-    # have them turn opposite ways and converge again.
+    # Standing still is never safe: a hold is only recoverable if something
+    # guarantees the leader moves again, and in a chain of followers nothing
+    # does - every robot holds behind the one ahead and the whole train
+    # freezes. So inside the standoff we always turn away and keep moving.
+    # Fixed clockwise, so two robots meeting turn the same absolute direction
+    # and separate; a mirrored "turn away from its bearing" would have them
+    # turn opposite ways and converge again.
     yield_speed: float = 0.06
     yield_turn_speed: float = 0.70
     avoid_enabled: bool = False
@@ -131,14 +133,11 @@ def follow_command(target_distance, target_bearing, ranges, cfg,
             gap = target_distance - cfg.desired_distance
             speed *= clamp(gap / max(cfg.approach_margin, 1e-6), 0.0, 1.0)
             if speed <= 0.005:
-                # Only hold behind a robot facing AWAY. If it is facing us we
-                # would both sit here forever, so turn away instead. Keeps
-                # moving: rotating on the spot buys no separation.
-                if target_visible(oncoming_distance, oncoming_bearing):
-                    return (cfg.yield_speed,
-                            -min(cfg.yield_turn_speed, cfg.max_angular_speed),
-                            'YIELD_TURN')
-                return 0.0, turn, 'FOLLOW_HOLD'
+                # Too close. Never stop - turn away and keep rolling, so the
+                # gap reopens by itself and no chain of robots can deadlock.
+                return (cfg.yield_speed,
+                        -min(cfg.yield_turn_speed, cfg.max_angular_speed),
+                        'YIELD_TURN')
         return speed, turn, 'FOLLOW'
 
     # No robot in view: base curve. Also the specified response to a target
