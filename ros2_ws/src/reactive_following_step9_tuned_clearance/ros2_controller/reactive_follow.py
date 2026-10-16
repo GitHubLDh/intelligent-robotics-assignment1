@@ -24,7 +24,16 @@ from reactive_logic import FollowParameters, clamp, follow_command
 from sensor_snapshot import parse_snapshot
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "robots.json"
-FRESH_S = 0.25
+# How old a snapshot may be before we refuse to act on it. Measured in WALL
+# time, while the driver sends every 64 ms of SIM time - and five robots each
+# running a 360x3 LiDAR and a recognition camera push Webots well below real
+# time. At 0.25 s this tripped constantly on data that was perfectly good:
+# 483 dropouts in one 1133 s run, median 0.15 s, 70% of all time spent in
+# SENSOR_FAILSAFE. Every one zeroed the command and made the acceleration
+# limiter ramp back up from standstill, which is what broke the base curve.
+# 0.75 s tolerates the simulation running at roughly a quarter of real time;
+# at 0.15 m/s that is 11 cm of travel on the oldest data we would ever use.
+FRESH_S = 0.75
 ROBOT_NAMES = [f"R{i}" for i in range(1, 6)]
 
 
