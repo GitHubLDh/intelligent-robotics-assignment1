@@ -1,11 +1,18 @@
 """Basic reactive following. Five rules, checked most-urgent first.
 
-  1. red nearer than green, very close    -> turn on the spot, never forward
+  1. red nearer than green, very close   -> escape (see below)
   2. red nearer than green, within red_turn_distance -> turn right
   3. green visible anywhere                          -> follow that robot
   4. red only, beyond approach_distance              -> go to it
-  5. no robot at all, wall within wall_detect_range  -> turn away until clear
+  5. no robot identified, anything inside escape_clear_range -> escape
   otherwise                                          -> base curve
+
+Rules 1 and 5 share one escape: reverse if close enough to be touching,
+otherwise rotate on the spot, always the same way, until the way ahead is
+clear - then the ordinary rules drive off in whatever direction that turned
+out to be. They are deliberately identical because the controller often
+cannot tell which case it is in: at contact range the camera detection is
+bistable, and a peer's wheel alone reads as an anonymous obstacle.
 
 Rules 1 and 2 compare the two colours rather than just checking that red is
 visible. Seeing red at all is not a threat - every robot we follow has a red
@@ -18,9 +25,9 @@ Red is the front half of a robot (it is facing us), green is the rear half
 degree, 4 m camera and LiDAR. One current snapshot per decision - no target
 memory, no global pose, no inter-robot communication.
 
-Linear speed is zero only in rule 1, where rotating on the spot is the whole
-point and the state is time-bounded; no other rule can stop a robot, so no
-arrangement of them can settle into a standstill.
+Linear speed is zero or negative only in the escape, where not advancing is
+the whole point; every other rule keeps the robot moving, so no arrangement of
+them can settle into a standstill.
 """
 from dataclasses import dataclass
 import math
@@ -83,13 +90,20 @@ class FollowParameters:
     red_turn_distance: float = 0.90
     # Rule 1: red this close is an emergency.
     very_close_distance: float = 0.45
-    # Rule 5: with no robot in view, a LiDAR return nearer than this is taken
-    # for a wall and steered away from. Only walls reach this rule - any robot
-    # in view is handled by rules 1-4 first - so it cannot turn us off a
-    # leader. The turn is firmer than the base curve so the wall actually
-    # leaves the view instead of being grazed along.
-    wall_detect_range: float = 2.00
-    wall_turn_speed: float = 0.50
+    # Close-range escape, shared by rules 1 and 5. Rotate on the spot while
+    # anything sits inside escape_clear_range, and reverse if we are close
+    # enough to be touching it. Both rules use the SAME fixed right turn:
+    # when they disagreed - rule 1 always right, rule 5 toward the open side -
+    # a pair pressed face to face alternated between them and oscillated left
+    # and right on the spot, because at contact range the bearing is so
+    # sensitive to lateral offset that the camera detection is bistable.
+    escape_clear_range: float = 2.00
+    contact_range: float = 0.25
+    reverse_speed: float = 0.06
+    # As wide as the sensor allows. At +/-15 degrees a wall met at an angle
+    # was never "ahead" at all, so nothing fired and the robot drove into it
+    # and slid along it.
+    obstacle_cone: float = 0.785
     # Acceleration limits, applied by the node. Asymmetric on purpose: the
     # limiter exists to stop a target appearing at the edge of the cone from
     # producing an instant full-rate swing, which is an INCREASE in |w|.
@@ -125,8 +139,11 @@ def sector_min(scan, low, high):
     return min(vals) if vals else RANGE_MAX
 
 
-def clearance_ahead(scan, half_width=math.radians(15)):
-    """Nearest LiDAR return in the forward cone, or None if the scan is bad."""
+def clearance_ahead(scan, half_width=0.785):
+    """Nearest LiDAR return in the forward cone, or None if the scan is bad.
+
+    half_width is FollowParameters.obstacle_cone when called for real.
+    """
     if not _valid_scan(scan):
         return None
     return sector_min(scan, -half_width, half_width)
@@ -135,7 +152,7 @@ def clearance_ahead(scan, half_width=math.radians(15)):
 def follow_command(green_distance, green_bearing,
                    red_distance, red_bearing, ranges, cfg):
     """Return (linear m/s, angular rad/s, mode) for the current snapshot."""
-    ahead = clearance_ahead(ranges)
+    ahead = clearance_ahead(ranges, cfg.obstacle_cone)
     if ahead is None:
         return 0.0, 0.0, 'SENSOR_FAILSAFE'
 
@@ -148,6 +165,17 @@ def follow_command(green_distance, green_bearing,
     # i.e. the thing closest to us is facing us. While a green back is the
     # closer thing, we keep following it.
     red_threatens = red and (not green or red_distance < green_distance)
+
+    def escape(mode_prefix='ESCAPE'):
+        """Shared close-range response: back out if we are touching
+        something, otherwise rotate on the spot. Never drives forward - that
+        is what made a robot grind along a wall it was supposedly avoiding.
+        Always turns the same way, so two robots using it cannot alternate
+        against each other. Stateless: the rule simply stops firing once the
+        way ahead is clear, and the ordinary rules take over."""
+        if ahead < cfg.contact_range:
+            return -cfg.reverse_speed, right * 0.5, mode_prefix + '_BACK'
+        return 0.0, right, mode_prefix + '_TURN'
 
     # 1. A robot is facing us and very close: turn on the spot, never drive
     #    forward. There used to be an ESCAPE_GO branch that drove ahead once
@@ -163,7 +191,7 @@ def follow_command(green_distance, green_bearing,
     #    it is gone the ordinary rules drive us off. Both robots turn right,
     #    so a head-on pair separates instead of mirroring each other.
     if red_threatens and red_distance < cfg.very_close_distance:
-        return 0.0, right, 'ESCAPE_TURN'
+        return escape()
 
     # 2. Facing us, close but not yet critical: turn right.
     if red_threatens and red_distance < cfg.red_turn_distance:
@@ -194,16 +222,15 @@ def follow_command(green_distance, green_bearing,
                      -approach_cap, approach_cap)
         return cfg.forward_speed, turn, 'APPROACH'
 
-    # 5. No robot in view at all, but the LiDAR sees something ahead: a wall.
-    #    Turn away from it, toward whichever half of the cone is more open,
-    #    until it drops out of range. Reached only when rules 1-4 declined,
-    #    so a visible robot is never mistaken for a wall.
-    if not green and not red and ahead < cfg.wall_detect_range:
-        left = sector_min(ranges, math.radians(10), HALF_FOV)
-        right_side = sector_min(ranges, -HALF_FOV, math.radians(-10))
-        direction = 1.0 if left >= right_side else -1.0
-        return cfg.forward_speed, direction * min(
-            cfg.wall_turn_speed, cfg.max_angular_speed), 'AVOID_WALL'
+    # 5. No robot identified by the camera, but the LiDAR sees something
+    #    inside escape_clear_range. It may be a wall, or a peer the camera
+    #    has lost - at contact range it routinely does, and a peer's wheel
+    #    alone reads as an anonymous obstacle. We no longer try to tell them
+    #    apart: the response is the same escape as rule 1, so whichever it
+    #    is, the robot backs out if touching and otherwise rotates until the
+    #    way ahead is clear, then drives off in that direction.
+    if not green and not red and ahead < cfg.escape_clear_range:
+        return escape('OBSTACLE')
 
     # Nothing to act on: wander on the base curve.
     return cfg.forward_speed, clamp(cfg.base_angular_speed,

@@ -139,22 +139,34 @@ Perception reduces each frame to the nearest red and the nearest green, as
 \toprule
 \# & State & Condition & Action \\
 \midrule
-1 & \texttt{ESCAPE\_TURN} & red nearer, $d_r<0.45$ & $v=0$, turn right \\
+1 & \texttt{ESCAPE\_*}    & red nearer, $d_r<0.45$ & escape \\
 2 & \texttt{AVOID\_RED}   & red nearer, $d_r<0.90$ & turn right \\
 3 & \texttt{FOLLOW}       & green visible          & steer to it, speed ramp \\
 4 & \texttt{APPROACH}     & red only, $d_r\ge0.90$ & steer to it \\
-5 & \texttt{AVOID\_WALL}  & no robot, LiDAR $<2.0$ & turn to open side \\
+5 & \texttt{OBSTACLE\_*}  & no robot, LiDAR $<2.0$ & escape \\
 -- & \texttt{BASE\_CURVE} & otherwise              & $v_0$, $\omega_{\text{base}}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Two design points proved necessary rather than cosmetic.
+The \emph{escape} shared by rules 1 and 5 reverses at
+\SI{0.06}{\metre\per\second} if the LiDAR reads under \SI{0.25}{\metre}
+(\texttt{\_BACK}), and otherwise rotates on the spot, always clockwise, until
+the forward cone is clear (\texttt{\_TURN}). It never advances. Being
+stateless, it simply stops firing once the way ahead opens, and whichever
+rule applies next drives off in the direction the rotation happened to reach.
+
+Three design points proved necessary rather than cosmetic.
 
 \paragraph{Red is a comparison, not a detection}
 Rules 1--2 require red to be \emph{nearer than green}, not merely visible.
 Every robot being followed presents a red half somewhere in view, so keying on
 visibility made followers abandon correct leaders.
+
+\paragraph{Rules 1 and 5 must agree on a direction}
+They respond to the same physical situation seen through different sensors,
+so they must not disagree about which way to turn. Section~\ref{sec:esc}
+describes what happened when they did.
 
 \paragraph{Turn rate is capped by radius, not by a fixed rate}
 Steering straight at a leader is pure pursuit, which cuts inside the leader's
@@ -226,6 +238,37 @@ value is close to the best achievable for this formation.
 Each item below states the mechanism, the evidence for it, what it costs in
 behaviour, and what removing it would require. Several are properties of the
 sensing envelope and cannot be fixed inside the control rules at all.
+
+\subsection{Close-range escape: two rules that disagreed}
+\label{sec:esc}
+The original design had rule 1 turn clockwise and rule 5 turn toward whichever
+half of the cone was more open. The two then contradicted each other whenever
+a robot was close enough that the camera could not reliably classify it.
+
+At contact the bearing to a peer is extremely sensitive to lateral offset: at
+\SI{0.15}{\metre}, \SI{1}{\centi\metre} sideways is $6^\circ$ and
+\SI{8}{\centi\metre} is $39^\circ$. Two robots pressed together therefore put
+each other's red half near the $\pm50^\circ$ cone edge, where detection
+alternates frame to frame. Logs show the consequence directly: of 53
+\texttt{AVOID\_WALL} commands, none carried any camera detection, and they
+interleave with \texttt{ESCAPE\_TURN} lines reading
+\texttt{red=0.15@+0.86}. The pair alternated between a clockwise command and
+an anticlockwise one and sat spinning against each other, faces touching.
+
+The same rule also made a robot grind along a wall, for two further reasons:
+it returned full forward speed while turning, so it drove into what it was
+avoiding; and clearance was measured over only $\pm15^\circ$, so a wall met
+obliquely was never ``ahead'' at all and nothing fired.
+
+Both are now one escape, shared by rules 1 and 5, always clockwise, never
+advancing, reversing when the LiDAR reads under \SI{0.25}{\metre}, and
+measuring clearance over $\pm45^\circ$. We stopped trying to distinguish the
+cases: a peer seen only by its wheel is indistinguishable from a wall, and
+since the correct response is the same, the distinction was never needed. The
+remaining weakness is that the escape is purely open-loop in direction --- it
+always turns the same way, which is what guarantees two robots separate, but
+also means a robot in a corner will rotate until some direction happens to
+clear rather than choosing the best one.
 
 \subsection{Bistable detection at the edge of the field of view}
 A target sitting near $\pm50^\circ$ is alternately inside and outside the
