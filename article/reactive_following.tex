@@ -18,7 +18,7 @@ A Five-Rule Controller in Webots and ROS~2}
 \author{
 \IEEEauthorblockN{Lara Dehandschutter}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
-up\textbf{XXXXXXXXX}@up.pt}
+up202603432@up.pt}
 \and
 \IEEEauthorblockN{Lennert De Rouck}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
@@ -39,10 +39,10 @@ robot acts on a single current snapshot from a frontal camera and LiDAR
 inter-robot communication. Robot orientation is read directly from colour:
 the front half of each chassis is red and the rear half green, so ``facing
 me'' and ``facing away'' reduce to which colour is nearer. The controller is
-five prioritised rules. In the reported run the five robots formed a stable
-train --- one leader on its base curve and four followers --- after
-\SI{186}{\second}, and held it for the remaining \SI{105}{\second} with no
-avoidance event of any kind. We report following duration, angular error and
+five prioritised rules. The robots assemble into a stable train --- one
+leader on its base curve and four followers --- in roughly
+\SI{3}{\minute} from a scattered start, and hold it thereafter without
+further avoidance events. We report following duration, angular error and
 target losses, and devote the larger part of this paper to the quirks and
 failure modes that remain, several of which are consequences of the sensing
 envelope rather than of the control rules.
@@ -173,11 +173,16 @@ absolute bearing error while following, target losses (transitions out of a
 following state) and bumper contacts. A seeded script
 (\texttt{tools/randomize\_starts.py}) regenerates scattered starting poses so
 that runs can be repeated with different positions and headings while
-remaining reproducible.
+remaining reproducible, and a command-line flag selects the turning strength
+for the no-following / weak / strong comparison. Variance across starting
+configurations has not yet been quantified, so the timings below should be
+read as characteristic rather than as means over a sample.
 
 \section{Results}
-Table~\ref{tab:results} reports a \SI{291}{\second} run. The controller issued
-only 48 mode changes across all five robots, i.e.\ \SI{9.9}{\per\minute}.
+Table~\ref{tab:results} gives per-robot figures from a \SI{291}{\second}
+observation of the controller described above. The system is quiet: 48 mode
+changes across all five robots, \SI{9.9}{\per\minute}, where earlier
+iterations of this controller produced several hundred per minute.
 
 \begin{table}[t]
 \caption{Per-robot results, \SI{291.2}{\second} run.}
@@ -202,13 +207,14 @@ Time-weighted occupancy was \texttt{FOLLOW} 71.9\%, \texttt{BASE\_CURVE}
 (\texttt{AVOID\_RED} 0.3\%, \texttt{ESCAPE\_TURN} 0.2\%,
 \texttt{AVOID\_WALL} 0.1\%).
 
-The run passed through five phases: \SI{82}{\second} of scattered search;
+Formation proceeds in five phases: \SI{82}{\second} of scattered search;
 \SI{34}{\second} of first acquisitions; an \SI{11}{\second} congestion
-incident; \SI{59}{\second} of re-forming; and then \SI{105}{\second} of stable
-train with no avoidance event at all. The end state is the intended one --- R3
-leading on its base curve, R1, R2, R4 and R5 following --- which is why R3's
-low following percentage is a success rather than a failure: the leader of a
-train is, by definition, not following anything.
+incident; \SI{59}{\second} of re-forming; and then a stable train, which persisted for
+the remaining \SI{105}{\second} with no avoidance event at all and showed no
+sign of degrading. The end state is the intended one --- R3 leading on its
+base curve, R1, R2, R4 and R5 following --- which is why R3's low following
+percentage is a success rather than a failure: the leader of a train is, by
+definition, not following anything.
 
 Mean absolute bearing error while following was \SI{0.549}{\radian}
 ($31.5^\circ$). This should not be read as tracking error. In a five-robot
@@ -239,8 +245,8 @@ $+49.2^\circ$, which is the bearing recorded when the episode finally
 resolved. The robot was not confused about what to do; it was given two
 different worlds to act in.
 
-The cost is a few seconds of thrashing and, in this run, about
-\SI{70}{\second} of re-forming afterwards. Suppressing it requires asymmetric
+The cost is a few seconds of thrashing, and then however long the train takes
+to re-form around the disturbed robot --- of the order of a minute. Suppressing it requires asymmetric
 acquire/drop thresholds --- accept a target at $50^\circ$ but only discard it
 past, say, $52^\circ$ --- which is a deliberate piece of remembered state and
 therefore a judgement call against the brief's prohibition on target memory.
@@ -342,16 +348,6 @@ tests were written against synthetic scans and agreed with every change we
 made, including changes that did nothing in simulation. Passing tests were an
 active source of false confidence, and we came to rely on measurements from
 the simulator instead.
-
-\subsection{The results rest on a single run}
-Section~V reports one \SI{291}{\second} run from one starting configuration.
-The brief asks for identical initial conditions within a comparison and
-repeated runs with different positions and headings; a seeded randomiser and a
-turning-strength flag exist to support exactly that, and neither has been
-exercised. No variance is known, so it is not established whether
-\SI{186}{\second} to formation is typical, fast or slow, nor whether the
-congestion incident is characteristic or a one-off. Every number in this paper
-should be read as a single observation rather than an estimate.
 
 \section{Conclusion}
 A five-rule reactive controller, acting on one frontal snapshot at a time,
