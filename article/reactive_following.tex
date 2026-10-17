@@ -1,0 +1,329 @@
+%% Assignment 1 - Reactive Following with Five Robots (Webots + ROS 2)
+%% IEEE conference format, non-blind as required by the assignment brief.
+%% Build:  pdflatex reactive_following.tex   (twice, for references)
+\documentclass[conference,a4paper]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{siunitx}
+\sisetup{detect-all}
+
+\begin{document}
+
+\title{Reactive Following with Five Robots:\\
+A Five-Rule Controller in Webots and ROS~2}
+
+\author{
+\IEEEauthorblockN{Lara Dehandschutter}
+\IEEEauthorblockA{FEUP / Universidade do Porto\\
+lara.dehandschutter@ugent.be}
+\and
+\IEEEauthorblockN{Lennert De Rouck}
+\IEEEauthorblockA{FEUP / Universidade do Porto\\
+lennert.derouck@ugent.be}
+\and
+\IEEEauthorblockN{Pedro Cancela}
+\IEEEauthorblockA{FEUP / Universidade do Porto\\
+up202400230@up.pt}
+}
+
+\maketitle
+
+\begin{abstract}
+We present a purely reactive controller that makes five differential-drive
+robots form a following chain in Webots, driven by five ROS~2 nodes. Each
+robot acts on a single current snapshot from a frontal camera and LiDAR
+($100^\circ$, \SI{4}{\metre}); there is no target memory, no global pose and no
+inter-robot communication. Robot orientation is read directly from colour:
+the front half of each chassis is red and the rear half green, so ``facing
+me'' and ``facing away'' reduce to which colour is nearer. The controller is
+five prioritised rules. In the reported run the five robots formed a stable
+train --- one leader on its base curve and four followers --- after
+\SI{186}{\second}, and held it for the remaining \SI{105}{\second} with no
+avoidance event of any kind. We report following duration, angular error and
+target losses, and devote the larger part of this paper to the quirks and
+failure modes that remain, several of which are consequences of the sensing
+envelope rather than of the control rules.
+\end{abstract}
+
+\section{Introduction}
+The task is reactive following: five robots, each deciding only from its own
+current sensor readings, should aggregate into one or more following chains.
+The constraints are those of classical reactive control in the sense of
+Brooks' subsumption architecture~\cite{brooks1986}: behaviour is a priority
+ordering over situation--action rules, with no world model and no planning.
+The assignment additionally forbids GPS, global localisation, target memory
+and privileged state, while permitting internal controller state of the
+PI/PID kind.
+
+Our contribution is deliberately small. The interesting content of this report
+is not the controller, which is roughly 120 lines, but the catalogue of ways
+in which a correct-looking reactive rule set misbehaves once five copies of it
+interact in a shared environment. Section~\ref{sec:limitations} is therefore
+the longest section, by intent.
+
+\section{Simulation Model and Sensing}
+
+\subsection{Robot}
+Each robot is a differential-drive cylinder of radius \SI{0.115}{\metre} with
+two powered wheels and an invisible contact bumper of radius
+\SI{0.146}{\metre}. Two robots are in contact when their centres are
+\SI{0.292}{\metre} apart; this number is the reference against which all
+proximity results below are read.
+
+\subsection{Colour-coded orientation}
+An earlier iteration used two small recognition plaques, one red at the front
+and one green at the rear. These were replaced by two coloured half-shells
+covering the front and rear halves of the chassis. The reason is angular
+coverage: a flat plaque shrinks to nothing in projection as a robot turns
+away, and we measured that the leader became unclassifiable once the angle
+between its heading and the observer's line of sight exceeded about
+$74^\circ$ --- precisely when a leader was turning, which is when a follower
+most needs to keep it.
+
+Each half is a separate Webots \texttt{Solid} with its own
+\texttt{recognitionColors}. One detail is load-bearing: Webots reports the
+\emph{origin} of a recognised Solid, so the two halves are offset to
+$x=\pm\SI{0.060}{\metre}$. Sharing the chassis centre would make both halves
+report the same position and front/back would be indistinguishable.
+
+\subsection{Sensors}
+Sensing is frontal only, as required: a recognition camera and a LiDAR, both
+$100^\circ$ and \SI{4}{\metre}. The LiDAR mounting deserves comment because it
+caused most of our early failures and its fix is non-obvious.
+
+Mounted centrally on the roof at $z=\SI{0.155}{\metre}$ --- the natural place,
+and necessary to clear its own chassis --- the LiDAR sits \emph{above} the
+\SI{0.125}{\metre} body top of every other robot. With a narrow vertical field
+of view, the beam only descends to body height at
+\begin{equation}
+d \;=\; \frac{0.155-0.125}{\tan(\theta_v/2)} \;\approx\; \SI{0.75}{\metre},
+\end{equation}
+so a peer closer than \SI{0.75}{\metre} is invisible. Every collision
+threshold we might wish to set lies inside that blind radius. Worse, the
+blindness is unavoidable for a \emph{central} sensor: to avoid seeing its own
+rim at radius $r_b$ the beam drop at $r_b$ must stay under the clearance $c$,
+while seeing a peer at distance $d$ requires the drop at $d-r_b$ to reach $c$.
+Both $\theta_v$ and $c$ cancel, leaving $d > 2r_b$ --- twice the body radius,
+which is exactly the distance at which two robots already touch.
+
+The resolution exploits the fact that the LiDAR is now frontal. Mounted at the
+\emph{front edge} ($x=\SI{0.130}{\metre}$, outside the body radius), every
+forward ray's closest approach to the chassis lies behind the sensor, so it
+can be lowered to $z=\SI{0.115}{\metre}$: inside the \SIrange{0.045}{0.125}{\metre}
+band of every peer. Robots are then visible at all ranges including contact.
+A $360^\circ$ LiDAR cannot do this, because its rearward rays would face its
+own chassis.
+
+\subsection{Software architecture}
+Webots runs one controller per robot, which packs a camera/LiDAR snapshot into
+a UDP datagram. A ROS~2 bridge republishes each as
+\texttt{/R\textit{i}/local\_sensors}; five independent \texttt{ReactiveFollower}
+nodes subscribe and publish \texttt{/R\textit{i}/cmd\_vel}. No node subscribes
+to another robot's topics, which is what makes the no-communication constraint
+auditable rather than merely asserted.
+
+\section{Reactive Controller}
+Perception reduces each frame to the nearest red and the nearest green, as
+(distance, bearing) pairs. The controller is five rules in priority order
+(Table~\ref{tab:rules}).
+
+\begin{table}[t]
+\caption{Rules, in evaluation order. First match wins.}
+\label{tab:rules}
+\centering
+\small
+\begin{tabular}{@{}clll@{}}
+\toprule
+\# & State & Condition & Action \\
+\midrule
+1 & \texttt{ESCAPE\_TURN} & red nearer, $d_r<0.45$ & $v=0$, turn right \\
+2 & \texttt{AVOID\_RED}   & red nearer, $d_r<0.90$ & turn right \\
+3 & \texttt{FOLLOW}       & green visible          & steer to it, speed ramp \\
+4 & \texttt{APPROACH}     & red only, $d_r\ge0.90$ & steer to it \\
+5 & \texttt{AVOID\_WALL}  & no robot, LiDAR $<2.0$ & turn to open side \\
+-- & \texttt{BASE\_CURVE} & otherwise              & $v_0$, $\omega_{\text{base}}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two design points proved necessary rather than cosmetic.
+
+\paragraph{Red is a comparison, not a detection}
+Rules 1--2 require red to be \emph{nearer than green}, not merely visible.
+Every robot being followed presents a red half somewhere in view, so keying on
+visibility made followers abandon correct leaders.
+
+\paragraph{Turn rate is capped by radius, not by a fixed rate}
+Steering straight at a leader is pure pursuit, which cuts inside the leader's
+path. In a five-robot ring the leader sits about \SI{0.63}{\radian} off-axis,
+giving $\omega = 1.5\times0.63 = \SI{0.94}{\radian\per\second}$ and an arc
+radius of $v/\omega \approx \SI{0.15}{\metre}$ against a \SI{0.95}{\metre}
+ring: the formation spirals inward until it piles up. We cap by
+$\omega_{\max} = v_0/R_{\min}$ rather than by a shared $\omega$, because the
+robots run at different speeds (\SIrange{0.12}{0.16}{\metre\per\second}) and a
+shared cap would give each a different radius and distort the ring.
+
+\section{Experimental Method}
+The five robots start evenly spaced on a \SI{0.95}{\metre} circle, each
+heading along the tangent. We record per robot: following duration, mean
+absolute bearing error while following, target losses (transitions out of a
+following state) and bumper contacts. A seeded script
+(\texttt{tools/randomize\_starts.py}) regenerates scattered starting poses so
+that runs can be repeated with different positions and headings while
+remaining reproducible.
+
+\section{Results}
+Table~\ref{tab:results} reports a \SI{291}{\second} run. The controller issued
+only 48 mode changes across all five robots, i.e.\ \SI{9.9}{\per\minute}.
+
+\begin{table}[t]
+\caption{Per-robot results, \SI{291.2}{\second} run.}
+\label{tab:results}
+\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+ & Following & \% & Losses & Mean $|\beta|$ (rad) \\
+\midrule
+R1 & \SI{290.9}{\second} & 99.9 & 2 & 0.629 \\
+R2 & \SI{291.1}{\second} & 99.9 & 1 & 0.702 \\
+R3 & \SI{44.7}{\second}  & 15.3 & 2 & 0.420 \\
+R4 & \SI{282.8}{\second} & 97.1 & 3 & 0.729 \\
+R5 & \SI{137.2}{\second} & 47.1 & 6 & 0.451 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Time-weighted occupancy was \texttt{FOLLOW} 71.9\%, \texttt{BASE\_CURVE}
+27.5\%, and all avoidance states together below 1\%
+(\texttt{AVOID\_RED} 0.3\%, \texttt{ESCAPE\_TURN} 0.2\%,
+\texttt{AVOID\_WALL} 0.1\%).
+
+The run passed through five phases: \SI{82}{\second} of scattered search;
+\SI{34}{\second} of first acquisitions; an \SI{11}{\second} congestion
+incident; \SI{59}{\second} of re-forming; and then \SI{105}{\second} of stable
+train with no avoidance event at all. The end state is the intended one --- R3
+leading on its base curve, R1, R2, R4 and R5 following --- which is why R3's
+low following percentage is a success rather than a failure: the leader of a
+train is, by definition, not following anything.
+
+Mean absolute bearing error while following was \SI{0.549}{\radian}
+($31.5^\circ$). This should not be read as tracking error. In a five-robot
+ring the leader is geometrically about $36^\circ$ off-axis, so the measured
+value is close to the best achievable for this formation.
+
+\section{Quirks, Shortcomings and Limitations}
+\label{sec:limitations}
+
+\subsection{Edge-of-cone bistability}
+The one congestion incident is instructive. R3 and R5 each detected an
+oncoming robot, turned right and cleared in about \SI{1.4}{\second}: the rule
+working as designed. R4 instead oscillated between \texttt{AVOID\_WALL} and
+\texttt{ESCAPE\_TURN} three times in \SI{4}{\second}. The cause is visible in
+the bearing at resolution, $+49.2^\circ$: its target sat on the $\pm50^\circ$
+cone edge and flickered in and out of detection. The two states require
+opposite readings --- ``red very close'' and ``no robot at all'' --- so the
+controller alternated between them. This is a sensor-envelope artefact, not a
+logic error; no rule is wrong. A hysteresis band would suppress it at the cost
+of a small amount of remembered state.
+
+\subsection{The emergency response is rate-limited}
+An acceleration limiter smooths all commands. It also smooths the emergency:
+\texttt{ESCAPE\_TURN} commands $v=0,\ \omega=-0.80$, but the log shows
+$v=0.12,\ \omega=+0.37$ at onset, i.e.\ the robot is still rolling forward and
+still turning \emph{left} for roughly \SI{0.2}{\second} while the limiter
+unwinds the previous command. The highest-priority rule is therefore not
+actually the fastest-acting one.
+
+\subsection{Collisions were not captured}
+The metrics summary prints only on a clean shutdown. The analysed run was
+killed rather than interrupted, so bumper counts were lost. From mode
+thresholds we can infer that \texttt{ESCAPE\_TURN} triggers at
+\SI{0.64}{\metre} centre-to-centre against a \SI{0.292}{\metre} contact
+distance, so the incident was clear at the trigger --- but the logs of that
+run cannot say how much closer it came. Distance logging and a
+closest-approach metric were added afterwards and are not reflected in the
+numbers above. We report this rather than quietly omitting the metric.
+
+\subsection{No rear or lateral sensing}
+A robot alongside or behind is invisible: the camera and LiDAR both span only
+$100^\circ$ forward. Sideways collisions are therefore undetectable in
+principle, not merely unhandled. Our mitigations are preventive --- lane
+geometry and turn-rate caps that stop robots ending up abreast --- and nothing
+reacts once they are.
+
+\subsection{Open-loop geometric coupling}
+Three parameters are not independent. For five robots on a ring, spacing and
+radius satisfy $s = 2R\sin(\pi/5) = 1.176R$, and the camera reads
+\SI{0.19}{\metre} less than centre spacing. An earlier standoff of
+\SI{0.45}{\metre} therefore demanded a \SI{0.54}{\metre} ring while the turn
+cap refused anything tighter than \SI{0.90}{\metre}; the robots bunched and
+crawled at the speed floor. The present values agree, but they were made to
+agree by hand and nothing in the code enforces the relationship.
+
+\subsection{Mode changes are the only log events}
+Modes are logged on change, so a quantity that drifts \emph{within} a mode is
+invisible. We initially misdiagnosed a collision because \texttt{APPROACH} was
+recorded at $\omega=0.27$ while its true peak, reached between log lines, was
+at least $0.73$. Any conclusion drawn from this log format understates
+within-state extremes.
+
+\subsection{Measurement artefacts}
+One earlier analysis attributed 70\% of robot-time to sensor dropouts and
+concluded the simulation was running below real time. The log had in fact been
+recorded while stepping Webots tick by tick, so the simulation was halted
+between clicks. When run freely, \texttt{SENSOR\_FAILSAFE} occupies 0.0\% of
+the run. We record the mistake because the artefact is easy to reproduce and
+the wrong conclusion was superficially well-supported.
+
+\subsection{Repository state}
+The test suite does not match the delivered controller. All ten test modules
+exercise the previous \texttt{safe\_logic} cascade and the marker-based
+perception module, neither of which is wired into the current system; they
+would not run against it. The old controller is retained in the repository for
+comparison but is not executed.
+
+\subsection{Single-run evidence}
+The results are one run. The seeded randomiser exists so that repeats with
+different initial conditions can be performed, and the comparison across
+turning strengths that the brief suggests (no following / weak / strong) is
+supported by a command-line flag, but neither has been run at the time of
+writing. No statistical claim is made.
+
+\section{Conclusion}
+A five-rule reactive controller, acting on one frontal snapshot at a time,
+assembled five robots into a stable leader-plus-four-followers train in
+\SI{186}{\second} and held it without further intervention. The rules were
+cheap; the difficulty was almost entirely in the interaction between the
+sensing envelope and the geometry of a multi-robot formation. The dominant
+failure mode we did not eliminate --- bistable detection at the edge of the
+field of view --- is a property of where the sensor stops, not of what the
+controller decides.
+
+\begin{thebibliography}{9}
+\bibitem{brooks1986}
+R.~A. Brooks, ``A robust layered control system for a mobile robot,''
+\emph{IEEE J. Robot. Autom.}, vol.~2, no.~1, pp.~14--23, 1986.
+
+\bibitem{arkin1998}
+R.~C. Arkin, \emph{Behavior-Based Robotics}. Cambridge, MA, USA: MIT Press,
+1998.
+
+\bibitem{webots}
+O.~Michel, ``Webots: Professional mobile robot simulation,''
+\emph{Int. J. Adv. Robot. Syst.}, vol.~1, no.~1, pp.~39--42, 2004.
+
+\bibitem{ros2}
+S.~Macenski, T.~Foote, B.~Gerkey, C.~Lalancette, and W.~Woodall,
+``Robot Operating System 2: Design, architecture, and uses in the wild,''
+\emph{Science Robotics}, vol.~7, no.~66, 2022.
+
+\bibitem{coulter1992}
+R.~C. Coulter, ``Implementation of the pure pursuit path tracking algorithm,''
+Robotics Institute, Carnegie Mellon Univ., Tech. Rep. CMU-RI-TR-92-01, 1992.
+\end{thebibliography}
+
+\end{document}

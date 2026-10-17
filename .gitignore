@@ -23,3 +23,8 @@ __pycache__/
 *.mp4
 *.mov
 *.avi
+
+# LaTeX build products
+article/*.aux
+article/*.log
+article/*.out
