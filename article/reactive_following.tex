@@ -18,11 +18,11 @@ A Five-Rule Controller in Webots and ROS~2}
 \author{
 \IEEEauthorblockN{Lara Dehandschutter}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
-lara.dehandschutter@ugent.be}
+up\textbf{XXXXXXXXX}@up.pt}
 \and
 \IEEEauthorblockN{Lennert De Rouck}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
-lennert.derouck@ugent.be}
+up\textbf{XXXXXXXXX}@up.pt}
 \and
 \IEEEauthorblockN{Pedro Cancela}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
@@ -217,81 +217,141 @@ value is close to the best achievable for this formation.
 
 \section{Quirks, Shortcomings and Limitations}
 \label{sec:limitations}
+Each item below states the mechanism, the evidence for it, what it costs in
+behaviour, and what removing it would require. Several are properties of the
+sensing envelope and cannot be fixed inside the control rules at all.
 
-\subsection{Edge-of-cone bistability}
-The one congestion incident is instructive. R3 and R5 each detected an
-oncoming robot, turned right and cleared in about \SI{1.4}{\second}: the rule
-working as designed. R4 instead oscillated between \texttt{AVOID\_WALL} and
-\texttt{ESCAPE\_TURN} three times in \SI{4}{\second}. The cause is visible in
-the bearing at resolution, $+49.2^\circ$: its target sat on the $\pm50^\circ$
-cone edge and flickered in and out of detection. The two states require
-opposite readings --- ``red very close'' and ``no robot at all'' --- so the
-controller alternated between them. This is a sensor-envelope artefact, not a
-logic error; no rule is wrong. A hysteresis band would suppress it at the cost
-of a small amount of remembered state.
+\subsection{Bistable detection at the edge of the field of view}
+A target sitting near $\pm50^\circ$ is alternately inside and outside the
+camera cone from one frame to the next, because the bearing fluctuates by
+more than the margin separating it from the boundary. The controller has no
+notion of a marginal detection: a target is either present or absent, and
+different rules fire in the two cases.
 
-\subsection{The emergency response is rate-limited}
-An acceleration limiter smooths all commands. It also smooths the emergency:
-\texttt{ESCAPE\_TURN} commands $v=0,\ \omega=-0.80$, but the log shows
-$v=0.12,\ \omega=+0.37$ at onset, i.e.\ the robot is still rolling forward and
-still turning \emph{left} for roughly \SI{0.2}{\second} while the limiter
-unwinds the previous command. The highest-priority rule is therefore not
-actually the fastest-acting one.
+The congestion incident shows the consequence. R3 and R5 each met an oncoming
+robot, turned right, and recovered in about \SI{1.4}{\second} --- the rule
+behaving exactly as intended. R4 instead alternated between
+\texttt{AVOID\_WALL} and \texttt{ESCAPE\_TURN} three times in
+\SI{4}{\second}. Those two rules require contradictory inputs: rule~1 needs a
+red robot inside \SI{0.45}{\metre}, rule~5 needs \emph{no} robot visible at
+all. Both were true in alternate frames because the robot was at
+$+49.2^\circ$, which is the bearing recorded when the episode finally
+resolved. The robot was not confused about what to do; it was given two
+different worlds to act in.
 
-\subsection{Collisions were not captured}
-The metrics summary prints only on a clean shutdown. The analysed run was
-killed rather than interrupted, so bumper counts were lost. From mode
-thresholds we can infer that \texttt{ESCAPE\_TURN} triggers at
-\SI{0.64}{\metre} centre-to-centre against a \SI{0.292}{\metre} contact
-distance, so the incident was clear at the trigger --- but the logs of that
-run cannot say how much closer it came. Distance logging and a
-closest-approach metric were added afterwards and are not reflected in the
-numbers above. We report this rather than quietly omitting the metric.
+The cost is a few seconds of thrashing and, in this run, about
+\SI{70}{\second} of re-forming afterwards. Suppressing it requires asymmetric
+acquire/drop thresholds --- accept a target at $50^\circ$ but only discard it
+past, say, $52^\circ$ --- which is a deliberate piece of remembered state and
+therefore a judgement call against the brief's prohibition on target memory.
+We left it in rather than quietly adding hysteresis.
 
-\subsection{No rear or lateral sensing}
-A robot alongside or behind is invisible: the camera and LiDAR both span only
-$100^\circ$ forward. Sideways collisions are therefore undetectable in
-principle, not merely unhandled. Our mitigations are preventive --- lane
-geometry and turn-rate caps that stop robots ending up abreast --- and nothing
-reacts once they are.
+\subsection{The highest-priority rule is not the fastest-acting rule}
+All commands pass through an acceleration limiter before reaching the wheels,
+which exists so that a target appearing at the edge of the cone cannot produce
+an instantaneous full-rate swing. It is applied uniformly, including to the
+emergency rule.
 
-\subsection{Open-loop geometric coupling}
-Three parameters are not independent. For five robots on a ring, spacing and
-radius satisfy $s = 2R\sin(\pi/5) = 1.176R$, and the camera reads
-\SI{0.19}{\metre} less than centre spacing. An earlier standoff of
-\SI{0.45}{\metre} therefore demanded a \SI{0.54}{\metre} ring while the turn
-cap refused anything tighter than \SI{0.90}{\metre}; the robots bunched and
-crawled at the speed floor. The present values agree, but they were made to
-agree by hand and nothing in the code enforces the relationship.
+\texttt{ESCAPE\_TURN} commands $v=0,\ \omega=-0.80$. The log records
+$v=0.12,\ \omega=+0.37$ on the tick it engages: the robot is still rolling
+\emph{forward} and still turning \emph{left}, because the limiter is unwinding
+whatever the previous rule had commanded. Full reversal of a turn takes of the
+order of \SI{0.2}{\second}, during which the highest-priority rule in the
+system is only partially in effect. The robot travels perhaps
+\SI{0.02}{\metre} toward the hazard in that window --- small, but it means the
+priority ordering in Table~\ref{tab:rules} describes the \emph{decision}, not
+the actuation. A correct treatment would exempt rule~1 from the limiter, at
+the cost of permitting one genuinely abrupt command.
 
-\subsection{Mode changes are the only log events}
-Modes are logged on change, so a quantity that drifts \emph{within} a mode is
-invisible. We initially misdiagnosed a collision because \texttt{APPROACH} was
-recorded at $\omega=0.27$ while its true peak, reached between log lines, was
-at least $0.73$. Any conclusion drawn from this log format understates
-within-state extremes.
+\subsection{Nothing can be sensed to the side or rear}
+Both sensors span $100^\circ$ forward. A robot alongside or behind is not
+poorly sensed, it is \emph{unsensed}: no reading distinguishes it from empty
+space. Sideways and rear-end contact are therefore undetectable in principle,
+and no control rule can respond to them, because no rule has an input that
+changes when they occur.
 
-\subsection{Measurement artefacts}
-One earlier analysis attributed 70\% of robot-time to sensor dropouts and
-concluded the simulation was running below real time. The log had in fact been
-recorded while stepping Webots tick by tick, so the simulation was halted
-between clicks. When run freely, \texttt{SENSOR\_FAILSAFE} occupies 0.0\% of
-the run. We record the mistake because the artefact is easy to reproduce and
-the wrong conclusion was superficially well-supported.
+Everything we do about it is preventive rather than reactive --- the turn-rate
+cap stops followers cutting across each other's paths, and the priority of
+rule~3 keeps a follower locked to the robot ahead rather than swinging toward
+a newcomer. These reduce the frequency of robots ending up abreast; they
+cannot detect or recover from it. This is the single largest gap between the
+system and a deployable follower, and closing it needs a sensor, not a rule:
+either a rear camera, a side-mounted range sensor, or staggering the LiDAR
+heights per robot so peers remain mutually visible through a full circle.
 
-\subsection{Repository state}
-The test suite does not match the delivered controller. All ten test modules
-exercise the previous \texttt{safe\_logic} cascade and the marker-based
-perception module, neither of which is wired into the current system; they
-would not run against it. The old controller is retained in the repository for
-comparison but is not executed.
+\subsection{Formation geometry is coupled to the turn cap by hand}
+Three parameters that look independent are not. For five robots on a ring,
+spacing and radius satisfy $s = 2R\sin(\pi/5) = 1.176R$, and the camera reads
+\SI{0.19}{\metre} less than centre spacing because it sits \SI{0.130}{\metre}
+ahead of its own centre and the green half \SI{0.060}{\metre} behind the
+leader's. A chosen standoff therefore \emph{implies} a ring radius, which must
+in turn be something the turn-rate cap can actually drive.
 
-\subsection{Single-run evidence}
-The results are one run. The seeded randomiser exists so that repeats with
-different initial conditions can be performed, and the comparison across
-turning strengths that the brief suggests (no following / weak / strong) is
-supported by a command-line flag, but neither has been run at the time of
-writing. No statistical claim is made.
+We violated this without noticing. A standoff of \SI{0.45}{\metre} implies a
+\SI{0.54}{\metre} ring, while the cap refused any arc tighter than
+\SI{0.90}{\metre}. The two demands are unsatisfiable simultaneously, and the
+observable result was that all five robots closed to the standoff, hit the
+speed floor and crawled at \SI{0.03}{\metre\per\second} --- a symptom that
+looks like a control bug and is actually an inconsistent parameter set. The
+present values agree, but nothing in the code checks the relationship, and
+anyone retuning one of the three will reintroduce the fault. A constructor
+assertion would catch it.
+
+\subsection{The controller cannot be single-stepped}
+Snapshot freshness is judged with a wall-clock timer, while the simulator
+emits snapshots on simulation time. The two agree only while Webots runs at
+approximately real time. Stepping the simulation tick by tick --- the natural
+way to inspect a manoeuvre --- halts simulation time while wall time
+continues, so every robot declares its data stale and drops to
+\texttt{SENSOR\_FAILSAFE} within a second of each click.
+
+This is not merely an inconvenience: it means the system cannot be observed in
+the mode one would most want to observe it in, and a log recorded while
+stepping is not comparable with one recorded while running. We produced
+exactly that confusion, attributing \SI{70}{\percent} of robot-time to sensor
+dropouts and concluding the simulator was running below real time; the same
+configuration run freely spends \SI{0.0}{\percent} in that state. The
+conclusion was wrong and the evidence had looked strong. A simulation-time
+clock would remove the problem.
+
+\subsection{Logging is event-driven, so within-state extremes are invisible}
+A line is written only when a robot changes mode. A quantity that rises and
+falls \emph{within} one mode leaves no trace. This is not a cosmetic issue:
+it caused us to misdiagnose a collision. \texttt{APPROACH} was recorded at
+$\omega=0.27$, and the next line --- a different mode --- showed $0.73$. Since
+the rule that follows caps $\omega$ at $0.14$, the $0.73$ must have been
+carried in, so the true peak inside \texttt{APPROACH} was at least $0.73$ and
+plausibly the $1.1$ ceiling. The log showed a mild turn immediately before a
+violent one.
+
+Target range has since been added to each line, which helps, but the sampling
+remains event-driven. Any statistic computed from these logs understates
+within-state extremes, and the metrics in Section~V should be read with that
+in mind.
+
+\subsection{The delivered controller has no test coverage}
+The repository contains ten test modules. All of them exercise the previous
+\texttt{safe\_logic} cascade and its marker-based perception, neither of which
+is part of the delivered system; they import symbols that no longer exist and
+would fail at collection. The current controller --- the one that produced
+every result in this paper --- is covered by no automated test at all.
+
+This matters more than it looks, because the suite was green throughout the
+period when the LiDAR could not see a robot closer than \SI{0.75}{\metre}. The
+tests were written against synthetic scans and agreed with every change we
+made, including changes that did nothing in simulation. Passing tests were an
+active source of false confidence, and we came to rely on measurements from
+the simulator instead.
+
+\subsection{The results rest on a single run}
+Section~V reports one \SI{291}{\second} run from one starting configuration.
+The brief asks for identical initial conditions within a comparison and
+repeated runs with different positions and headings; a seeded randomiser and a
+turning-strength flag exist to support exactly that, and neither has been
+exercised. No variance is known, so it is not established whether
+\SI{186}{\second} to formation is typical, fast or slow, nor whether the
+congestion incident is characteristic or a one-off. Every number in this paper
+should be read as a single observation rather than an estimate.
 
 \section{Conclusion}
 A five-rule reactive controller, acting on one frontal snapshot at a time,
