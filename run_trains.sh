@@ -1,22 +1,35 @@
 #!/bin/bash
 # Starts all 3 pieces of the reactive_following_step9_tuned_clearance system:
 # Webots (the body), bridge_all.py (the translator), follow_improved.py (the brain).
-# Usage: ./run_trains.sh [world_file_name] [-- follower args]
-#   default world: big_no_obstacles.wbt
+# Usage: ./run_trains.sh [1-5 | world_file_name] [-- follower args]
+#
+# Starting layout: pass 1-5 to place the robots before launching.
+#   1  ring        0.95 m circle, tangent  - starts already following
+#   2  wide-ring   1.50 m circle, tangent  - must approach first
+#   3  scattered   far apart, random headings - must search
+#   4  column      single file, all facing +x - already a train
+#   5  facing-in   1.20 m circle, pointed inward - worst case
+# Omit it to leave the world's current poses untouched.
+#
+#   ./run_trains.sh 3                       # scattered start
+#   ./run_trains.sh 1 -- --steering-gain 0  # ring start, no following
+#
 # Slide 7 experiments (identical initial conditions, vary the turning):
-#   ./run_trains.sh -- --steering-gain 0      # no following
-#   ./run_trains.sh -- --steering-gain 0.8    # weak turning
-#   ./run_trains.sh -- --steering-gain 2.6    # strong turning
-# Slide 8 extensions:  -- --avoid --slow
-#   --constant-speed  spec-pure slide 4 baseline (no standoff: drives into
-#                     the leader, which is what the collision metric shows)
+#   ./run_trains.sh 1 -- --steering-gain 0     # no following
+#   ./run_trains.sh 1 -- --steering-gain 0.8   # weak turning
+#   ./run_trains.sh 1 -- --steering-gain 2.6   # strong turning
 
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_DIR="$REPO_DIR/ros2_ws/src/reactive_following_step9_tuned_clearance"
 WORLD="big_no_obstacles.wbt"
-if [ $# -gt 0 ] && [ "$1" != "--" ]; then WORLD="$1"; shift; fi
+LAYOUT=""
+# A bare 1-5 selects a starting layout; anything else is a world file name.
+if [ $# -gt 0 ] && [ "$1" != "--" ]; then
+    if [[ "$1" =~ ^[1-5]$ ]]; then LAYOUT="$1"; else WORLD="$1"; fi
+    shift
+fi
 [ "${1:-}" = "--" ] && shift
 FOLLOWER_ARGS=("$@")
 
@@ -35,6 +48,12 @@ cleanup() {
     wait 2>/dev/null
 }
 trap cleanup EXIT INT TERM
+
+if [ -n "$LAYOUT" ]; then
+    echo "[0/3] Setting starting layout $LAYOUT ..."
+    # Must run before Webots opens the world, or it loads the old poses.
+    python3 "$PKG_DIR/tools/set_start_layout.py" "$LAYOUT"
+fi
 
 echo "[1/3] Starting Webots with $WORLD ..."
 webots --batch --mode=realtime "$PKG_DIR/worlds/$WORLD" > >(tee "$LOG_DIR/webots.log") 2>&1 &
