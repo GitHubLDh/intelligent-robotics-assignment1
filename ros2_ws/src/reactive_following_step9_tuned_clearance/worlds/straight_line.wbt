@@ -1,0 +1,162 @@
+#VRML_SIM R2023b utf8
+EXTERNPROTO "../protos/SimpleDiffRobot.proto"
+
+WorldInfo {
+  title "Reactive Following Straight Line"
+  basicTimeStep 32
+  contactProperties [
+    ContactProperties {
+      material1 "body_support"
+      material2 "floor"
+      coulombFriction [ 0.05 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "wheel_rubber"
+      material2 "floor"
+      coulombFriction [ 1.15 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "body_support"
+      material2 "default"
+      coulombFriction [ 0.18 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "wheel_rubber"
+      material2 "default"
+      coulombFriction [ 0.6 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "body_support"
+      material2 "body_support"
+      coulombFriction [ 0.18 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "wheel_rubber"
+      material2 "body_support"
+      coulombFriction [ 0.35 ]
+      bounce 0
+    }
+    ContactProperties {
+      material1 "wheel_rubber"
+      material2 "wheel_rubber"
+      coulombFriction [ 0.45 ]
+      bounce 0
+    }
+  ]
+  coordinateSystem "ENU"
+}
+Viewpoint {
+  orientation 1 0 0 0.82
+  position 0 -14 15
+}
+Background {
+  skyColor [ 0.67 0.75 0.83 ]
+}
+DirectionalLight {
+  direction 0.35 0.50 -1
+  intensity 1.5
+  ambientIntensity 0.4
+}
+
+# Flat 12 x 12 meter floor: top surface at z=0.
+Solid {
+  translation 0 0 -0.05
+  name "floor"
+  contactMaterial "floor"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.19 0.23 0.27
+        roughness 1
+        metalness 0
+      }
+      geometry DEF FLOOR_BOX Box { size 12 12 0.1 }
+    }
+  ]
+  boundingObject USE FLOOR_BOX
+}
+
+# Perimeter walls for 12 x 12 m arena: 0.24 m high, 0.12 m thick.
+Solid {
+  translation 0 5.94 0.12
+  name "north_wall"
+  children [
+    DEF PERIMETER_WALL_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColor 0.60 0.65 0.70
+        roughness 0.95
+        metalness 0
+      }
+      geometry DEF WALL_NS Box { size 12 0.12 0.24 }
+    }
+  ]
+  boundingObject USE WALL_NS
+}
+Solid {
+  translation 0 -5.94 0.12
+  name "south_wall"
+  children [ USE PERIMETER_WALL_SHAPE ]
+  boundingObject USE WALL_NS
+}
+Solid {
+  translation 5.94 0 0.12
+  name "east_wall"
+  children [
+    DEF WALL_EW_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColor 0.60 0.65 0.70
+        roughness 0.95
+      }
+      geometry DEF WALL_EW Box { size 0.12 11.76 0.24 }
+    }
+  ]
+  boundingObject USE WALL_EW
+}
+Solid {
+  translation -5.94 0 0.12
+  name "west_wall"
+  children [ USE WALL_EW_SHAPE ]
+  boundingObject USE WALL_EW
+}
+
+# Five robots on one line, all facing in the positive x direction.
+SimpleDiffRobot {
+  translation -2.0000 0.0000 0.085
+  rotation 0 0 1 0
+  name "R1"
+  controller "udp_diff_driver"
+  bodyColor 0.10 0.72 0.95
+}
+SimpleDiffRobot {
+  translation -1.0000 0.0000 0.085
+  rotation 0 0 1 0
+  name "R2"
+  controller "udp_diff_driver"
+  bodyColor 0.98 0.68 0.21
+}
+SimpleDiffRobot {
+  translation 0.0000 0.0000 0.085
+  rotation 0 0 1 0
+  name "R3"
+  controller "udp_diff_driver"
+  bodyColor 0.19 0.81 0.52
+}
+SimpleDiffRobot {
+  translation 1.0000 0.0000 0.085
+  rotation 0 0 1 0
+  name "R4"
+  controller "udp_diff_driver"
+  bodyColor 0.69 0.49 0.96
+}
+SimpleDiffRobot {
+  translation 2.0000 0.0000 0.085
+  rotation 0 0 1 0
+  name "R5"
+  controller "udp_diff_driver"
+  bodyColor 0.92 0.32 0.44
+}

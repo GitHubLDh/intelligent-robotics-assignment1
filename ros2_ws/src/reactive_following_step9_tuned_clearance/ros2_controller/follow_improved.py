@@ -29,7 +29,12 @@ def load_config(path=CONFIG_PATH):
     names = [f"R{i}" for i in range(1, 6)]
     if set(data) != set(names):
         raise ValueError("Expected all five robot configs")
-    result = {name: SafeParameters(**settings) for name, settings in data.items()}
+    allowed = set(SafeParameters.__dataclass_fields__)
+    result = {
+        name: SafeParameters(**{key: value for key, value in settings.items()
+                                if key in allowed})
+        for name, settings in data.items()
+    }
     for name, cfg in result.items():
         if not (0 < cfg.forward_speed <= 0.25
                 and cfg.forward_speed <= cfg.follow_max_speed <= 0.25

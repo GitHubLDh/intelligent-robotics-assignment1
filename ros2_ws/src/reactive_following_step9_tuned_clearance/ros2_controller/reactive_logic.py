@@ -97,7 +97,7 @@ class FollowParameters:
     # a pair pressed face to face alternated between them and oscillated left
     # and right on the spot, because at contact range the bearing is so
     # sensitive to lateral offset that the camera detection is bistable.
-    escape_clear_range: float = 2.00
+    escape_clear_range: float = 0.25
     contact_range: float = 0.25
     reverse_speed: float = 0.06
     # As wide as the sensor allows. At +/-15 degrees a wall met at an angle

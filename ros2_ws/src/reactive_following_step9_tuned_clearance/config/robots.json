@@ -1,7 +1,8 @@
 {
   "R1": {
+    "body_color": [0.10, 0.72, 0.95],
     "forward_speed": 0.16,
-    "base_angular_speed": -0.14,
+    "base_angular_speed": -0.13,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,
@@ -21,6 +22,7 @@
     "lidar_rear_reverse_clear": 0.55
   },
   "R2": {
+    "body_color": [0.95, 0.25, 0.20],
     "forward_speed": 0.14,
     "base_angular_speed": 0.09,
     "steering_gain": 2.6,
@@ -42,6 +44,7 @@
     "lidar_rear_reverse_clear": 0.55
   },
   "R3": {
+    "body_color": [0.35, 0.85, 0.30],
     "forward_speed": 0.12,
     "base_angular_speed": -0.08,
     "steering_gain": 2.6,
@@ -63,8 +66,9 @@
     "lidar_rear_reverse_clear": 0.55
   },
   "R4": {
+    "body_color": [0.95, 0.65, 0.12],
     "forward_speed": 0.15,
-    "base_angular_speed": 0.18,
+    "base_angular_speed": 0.15,
     "steering_gain": 2.6,
     "max_angular_speed": 1.1,
     "desired_rear_range": 0.275,
@@ -84,6 +88,7 @@
     "lidar_rear_reverse_clear": 0.55
   },
   "R5": {
+    "body_color": [0.72, 0.30, 0.85],
     "forward_speed": 0.13,
     "base_angular_speed": -0.12,
     "steering_gain": 2.6,

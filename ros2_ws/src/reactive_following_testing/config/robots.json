@@ -1,7 +1,0 @@
-{
-  "R1": {"forward_speed": 0.16, "base_angular_speed": -0.20, "steering_gain": 1.80, "max_angular_speed": 0.90},
-  "R2": {"forward_speed": 0.14, "base_angular_speed":  0.24, "steering_gain": 1.80, "max_angular_speed": 0.90},
-  "R3": {"forward_speed": 0.12, "base_angular_speed": -0.16, "steering_gain": 1.80, "max_angular_speed": 0.90},
-  "R4": {"forward_speed": 0.15, "base_angular_speed":  0.18, "steering_gain": 1.80, "max_angular_speed": 0.90},
-  "R5": {"forward_speed": 0.13, "base_angular_speed": -0.26, "steering_gain": 1.80, "max_angular_speed": 0.90}
-}
