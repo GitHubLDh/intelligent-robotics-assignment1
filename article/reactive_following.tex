@@ -37,21 +37,20 @@ that follow one another in Webots through ROS~2. Every decision uses one
 current local snapshot: a frontal colour-recognition camera and a frontal
 LiDAR, both with a $100^\circ$ horizontal field of view and a \SI{4}{\metre}
 range. The robots share no pose, target identity, map or communication
-channel, and the controller does not retain a target after it disappears.
-The front and rear halves of each chassis are red and green, respectively,
-so the nearer colour distinguishes a robot facing the observer from one that
-can be followed. Priority rules select following, approach, head-on
-avoidance, obstacle escape or a base curve; a separate safety layer handles
-contact recovery. We evaluate the implementation in a \SI{12}{\metre} by
-\SI{12}{\metre} Webots arena containing four static obstacles. A recorded
-run completes one full circuit in \SI{165}{\second}; an earlier compact-ring
-run is retained as a comparison and reports per-robot following occupancy,
-losses and bearing error. The results show that the basic behaviour works,
-but also expose important limitations: frontal sensing cannot react to side
-or rear contacts, recognition is bistable at the camera boundary, and the
-reported circuit time is a single observation rather than a statistical
-benchmark. We discuss these trade-offs and define a repeatable seeded-start
-protocol for future trials.
+channel, and the controller never retains a target after it disappears.
+The front and rear halves of each chassis are red and green, so the nearer
+colour distinguishes a robot facing the observer from one that can be
+followed. Priority rules select following, approach, head-on avoidance,
+obstacle escape or a base curve, backed by a separate contact-recovery
+safety layer. We evaluate the implementation in a \SI{12}{\metre} by
+\SI{12}{\metre} Webots arena with four static obstacles. A recorded run
+completes one full circuit in \SI{165}{\second}; an earlier compact-ring run
+is retained for comparison, reporting per-robot following occupancy, losses
+and bearing error. The basic behaviour works, but also exposes important
+limitations: frontal sensing cannot react to side or rear contacts,
+recognition is bistable at the camera boundary, and the circuit time is a
+single observation rather than a statistical benchmark. We discuss these
+trade-offs and define a repeatable seeded-start protocol for future trials.
 \end{abstract}
 \begin{IEEEkeywords}
 reactive robotics, multi-robot following, Webots, ROS~2, LiDAR, robot
@@ -61,14 +60,12 @@ simulation
 \section{Introduction}
 The task is reactive following: five robots, each deciding only from its own
 current sensor readings, should aggregate into one or more following chains.
-The constraints are those of classical reactive control in the sense of
-Brooks' subsumption architecture~\cite{brooks1986}: behaviour is a priority
-ordering over situation--action rules, with no world model and no planning.
-This behavior-based framing also follows the broader robotics treatment in
-Arkin~\cite{arkin1998}.
-The assignment additionally forbids GPS, global localisation, target memory
-and privileged state, while permitting internal controller state of the
-PI/PID kind.
+The constraints follow classical reactive control in the sense of Brooks'
+subsumption architecture~\cite{brooks1986} and Arkin~\cite{arkin1998}: a
+priority ordering over situation--action rules, with no world model or
+planning. The assignment additionally forbids GPS, global localisation,
+target memory and privileged state, while permitting internal controller
+state of the PI/PID kind.
 
 Our contribution is threefold: (i) a reproducible five-robot reactive
 controller with an auditable ROS~2 information boundary, (ii) a geometric
@@ -92,14 +89,13 @@ two powered wheels and an invisible contact bumper of radius
 proximity results below are read.
 
 \subsection{Colour-coded orientation}
-An earlier iteration used two small recognition plaques, one red at the front
-and one green at the rear. These were replaced by two coloured half-shells
-covering the front and rear halves of the chassis. The reason is angular
-coverage: a flat plaque shrinks to nothing in projection as a robot turns
-away, and we measured that the leader became unclassifiable once the angle
-between its heading and the observer's line of sight exceeded about
-$74^\circ$ --- precisely when a leader was turning, which is when a follower
-most needs to keep it.
+Two small recognition plaques, red at the front and green at the rear, were
+replaced by coloured half-shells covering the front and rear halves of the
+chassis. The reason is angular coverage: a flat plaque shrinks to nothing in
+projection as a robot turns away, and we measured the leader becoming
+unclassifiable beyond about $74^\circ$ between its heading and the
+observer's line of sight --- precisely when a leader is turning, which is
+when a follower most needs it.
 
 Each half is a separate Webots \texttt{Solid} with its own
 \texttt{recognitionColors}. One detail is load-bearing: Webots reports the
@@ -165,7 +161,7 @@ rather than a ranging sensor.
 \caption{Simulation platform and sensing configuration.}
 \label{tab:platform}
 \centering
-\small
+\footnotesize
 \begin{tabular}{@{}ll@{}}
 \toprule
 Item & Configuration \\
@@ -194,9 +190,7 @@ topics.}
 \end{figure}
 
 Figure~\ref{fig:architecture} makes the locality and the absence of a central
-planner explicit. The repository also contains diagnostic Webots worlds for
-camera markers, low walls, head-on encounters and corners; no trajectory
-image is claimed here because the recorded run did not save pose traces.
+planner explicit.
 
 \section{Reactive Controller}
 Perception reduces each frame to the nearest red and the nearest green, as
@@ -207,7 +201,7 @@ Perception reduces each frame to the nearest red and the nearest green, as
 \caption{Rules, in evaluation order. First match wins.}
 \label{tab:rules}
 \centering
-\small
+\footnotesize
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}clll@{}}
 \toprule
@@ -244,7 +238,7 @@ advances according to current local clearances, then waits before retrying.
 configuration.}
 \label{tab:base}
 \centering
-\small
+\footnotesize
 \begin{tabular}{@{}lrr@{}}
 \toprule
 Robot & $v_0$ (m/s) & $\omega_{\rm base}$ (rad/s) \\
@@ -338,7 +332,7 @@ current run completed one defined perimeter circuit in \SI{165}{\second}.
 differ, so this is descriptive rather than a controlled comparison.}
 \label{tab:comparison}
 \centering
-\small
+\footnotesize
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}lrrr@{}}
 \toprule
@@ -355,7 +349,7 @@ Current obstacle world & $12\times12$ m / four & \SI{165}{s} & 1 perimeter circu
 \caption{Per-robot results, \SI{291.2}{\second} run.}
 \label{tab:results}
 \centering
-\small
+\footnotesize
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
  & Following & \% & Losses & Mean $|\beta|$ (rad) \\
@@ -392,14 +386,13 @@ ring the leader is geometrically about $36^\circ$ off-axis, so the measured
 values are dominated by formation geometry rather than a zero-error target.
 
 The comparison is intentionally limited: the two trials use different
-starting layouts and worlds, so the shorter current time cannot be interpreted
-as a controller improvement. The useful result is instead the combination of
-successful circuit completion, the per-robot table, and the explicit account
-of unmeasured variance. The main advantages are low computational complexity,
-auditable local information flow and graceful rule-level safety behaviour.
-The main limitations are the single-run benchmark, absent artificial noise,
-frontal-only sensing and the lack of a quantitative success rate over random
-seeds.
+layouts and worlds, so the shorter current time is not a controller
+improvement. The useful result is the combination of circuit completion, the
+per-robot table and an explicit account of unmeasured variance. The main
+advantages are low computational complexity, auditable local information
+flow and graceful rule-level safety; the main limitations are the single-run
+benchmark, absent artificial noise, frontal-only sensing and no quantitative
+success rate over random seeds.
 
 Beyond this timed circuit, the controller was also exercised on several
 arenas from \texttt{tools/generate\_random\_world.py}, which randomizes all
