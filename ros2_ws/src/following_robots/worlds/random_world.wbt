@@ -1,0 +1,98 @@
+#VRML_SIM R2023b utf8
+EXTERNPROTO "../protos/SimpleDiffRobot.proto"
+
+WorldInfo {
+  title "Random Reactive Following World (seed 2887712962)"
+  basicTimeStep 32
+  coordinateSystem "ENU"
+  contactProperties [
+    ContactProperties { material1 "body_support" material2 "floor" coulombFriction [ 0.05 ] bounce 0 }
+    ContactProperties { material1 "wheel_rubber" material2 "floor" coulombFriction [ 1.15 ] bounce 0 }
+    ContactProperties { material1 "body_support" material2 "default" coulombFriction [ 0.18 ] bounce 0 }
+    ContactProperties { material1 "wheel_rubber" material2 "default" coulombFriction [ 0.6 ] bounce 0 }
+    ContactProperties { material1 "body_support" material2 "body_support" coulombFriction [ 0.18 ] bounce 0 }
+    ContactProperties { material1 "wheel_rubber" material2 "body_support" coulombFriction [ 0.35 ] bounce 0 }
+    ContactProperties { material1 "wheel_rubber" material2 "wheel_rubber" coulombFriction [ 0.45 ] bounce 0 }
+  ]
+}
+
+Viewpoint { orientation 1 0 0 0.82 position 0 -14 15 }
+Background { skyColor [ 0.67 0.75 0.83 ] }
+DirectionalLight { direction 0.35 0.50 -1 intensity 1.5 ambientIntensity 0.4 }
+
+Solid {
+  translation 0 0 -0.05
+  name "floor"
+  contactMaterial "floor"
+  children [Shape { appearance PBRAppearance { baseColor 0.19 0.23 0.27 roughness 1 metalness 0 } geometry DEF FLOOR_BOX Box { size 12 12 0.1 } }]
+  boundingObject USE FLOOR_BOX
+}
+Solid { translation 0 5.94 0.12 name "north_wall"
+  children [Shape { appearance PBRAppearance { baseColor 0.60 0.65 0.70 roughness 0.95 } geometry DEF WALL_N Box { size 12 0.12 0.24 } }]
+  boundingObject USE WALL_N }
+Solid { translation 0 -5.94 0.12 name "south_wall"
+  children [Shape { appearance PBRAppearance { baseColor 0.60 0.65 0.70 roughness 0.95 } geometry DEF WALL_S Box { size 12 0.12 0.24 } }]
+  boundingObject USE WALL_S }
+Solid { translation 5.94 0 0.12 name "east_wall"
+  children [Shape { appearance PBRAppearance { baseColor 0.60 0.65 0.70 roughness 0.95 } geometry DEF WALL_E Box { size 0.12 11.76 0.24 } }]
+  boundingObject USE WALL_E }
+Solid { translation -5.94 0 0.12 name "west_wall"
+  children [Shape { appearance PBRAppearance { baseColor 0.60 0.65 0.70 roughness 0.95 } geometry DEF WALL_W Box { size 0.12 11.76 0.24 } }]
+  boundingObject USE WALL_W }
+
+# Random objects: 1
+Solid {
+  translation 1.0088 2.2792 0.3203
+  rotation 0 0 1 1.7643
+  name "random_object_1"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.900 0.680 0.120 roughness 0.85 }
+      geometry Box { size 1.0596 0.4881 0.6407 }
+    }
+  ]
+  boundingObject Box { size 1.0596 0.4881 0.6407 }
+}
+
+
+# Randomized robot starts: seed 2887712962
+SimpleDiffRobot {
+  translation -0.8203 0.5821 0.085
+  rotation 0 0 1 3.7356
+  name "R1"
+  controller "udp_diff_driver"
+  bodyColor 0.100 0.720 0.950
+}
+
+SimpleDiffRobot {
+  translation -3.1143 4.5153 0.085
+  rotation 0 0 1 5.0938
+  name "R2"
+  controller "udp_diff_driver"
+  bodyColor 0.950 0.250 0.200
+}
+
+SimpleDiffRobot {
+  translation 2.8377 -0.5281 0.085
+  rotation 0 0 1 1.8806
+  name "R3"
+  controller "udp_diff_driver"
+  bodyColor 0.350 0.850 0.300
+}
+
+SimpleDiffRobot {
+  translation -0.4032 -0.4996 0.085
+  rotation 0 0 1 0.6542
+  name "R4"
+  controller "udp_diff_driver"
+  bodyColor 0.950 0.650 0.120
+}
+
+SimpleDiffRobot {
+  translation 2.1994 3.1883 0.085
+  rotation 0 0 1 3.4889
+  name "R5"
+  controller "udp_diff_driver"
+  bodyColor 0.720 0.300 0.850
+}
+

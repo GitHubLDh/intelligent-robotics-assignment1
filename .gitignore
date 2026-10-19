@@ -28,3 +28,4 @@ __pycache__/
 article/*.aux
 article/*.log
 article/*.out
+.texlive/*

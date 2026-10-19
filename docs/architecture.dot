@@ -1,0 +1,19 @@
+digraph architecture {
+  graph [rankdir=LR, bgcolor="transparent", nodesep=0.35, ranksep=0.45,
+         fontname="Helvetica", fontsize=10, pad=0.05];
+  node [shape=box, style="rounded,filled", fillcolor="#eaf2f8",
+        color="#365f7d", fontname="Helvetica", fontsize=10,
+        margin="0.10,0.06"];
+  edge [color="#365f7d", fontname="Helvetica", fontsize=9];
+
+  sensors [label="Webots\nlocal camera + LiDAR\n+ bumper", fillcolor="#f7f1df"];
+  udp [label="UDP snapshot\n(loopback)", fillcolor="#f7f1df"];
+  bridge [label="ROS 2 Jazzy bridge\n/r_i/local_sensors\n/r_i/scan + diagnostics", fillcolor="#e7f4e5"];
+  nodes [label="Five SafeFollower nodes\nlocal snapshot only\npriority safety logic", fillcolor="#e7f4e5"];
+  cmd [label="/r_i/cmd_vel\ngeometry_msgs/Twist", fillcolor="#e7f4e5"];
+  wheels [label="Webots wheel motors\nrobot motion", fillcolor="#f7f1df"];
+
+  sensors -> udp -> bridge -> nodes -> cmd -> wheels;
+  wheels -> sensors [label="next local frame", style=dashed, constraint=false];
+  nodes -> nodes [label="no cross-robot topics", style=dotted, color="#9b3d3d", fontcolor="#9b3d3d", constraint=false];
+}

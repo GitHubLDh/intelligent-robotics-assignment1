@@ -6,6 +6,26 @@
 
 # Step 9.5 — Directional front/rear recognition (LATEST)
 
+## Generate a random world
+
+From this package directory, generate or replace the fixed output world:
+
+```bash
+python3 tools/generate_random_world.py
+```
+
+The command writes `worlds/random_world.wbt`, keeps the arena at 12 x 12 m,
+randomizes all five robot starts and headings, and chooses 0 to 5 collision-
+aware random cylinders or boxes. Use a seed to reproduce a layout and choose
+the object count explicitly when needed:
+
+```bash
+python3 tools/generate_random_world.py --seed 7 --objects 5
+webots worlds/random_world.wbt
+```
+
+Running the generator again always overwrites `worlds/random_world.wbt`.
+
 **Start with `README_DIRECTIONAL.md`.** This release adds smaller, visually
 one-sided markers and a camera-relative body/marker classifier. The previous
 README below describes earlier stages and may contain outdated camera-marker
