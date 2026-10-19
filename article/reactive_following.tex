@@ -22,7 +22,7 @@ up202603432@up.pt}
 \and
 \IEEEauthorblockN{Lennert De Rouck}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
-up\textbf{XXXXXXXXX}@up.pt}
+up202602215@up.pt}
 \and
 \IEEEauthorblockN{Pedro Cancela}
 \IEEEauthorblockA{FEUP / Universidade do Porto\\
@@ -39,13 +39,12 @@ robot acts on a single current snapshot from a frontal camera and LiDAR
 inter-robot communication. Robot orientation is read directly from colour:
 the front half of each chassis is red and the rear half green, so ``facing
 me'' and ``facing away'' reduce to which colour is nearer. The controller is
-five prioritised rules. The robots assemble into a stable train --- one
-leader on its base curve and four followers --- in roughly
-\SI{3}{\minute} from a scattered start, and hold it thereafter without
-further avoidance events. We report following duration, angular error and
-target losses, and devote the larger part of this paper to the quirks and
-failure modes that remain, several of which are consequences of the sensing
-envelope rather than of the control rules.
+five prioritised rules. In the current large arena, with four static
+obstacles and separated starting poses, the robots complete a full circuit
+of the world in \SI{165}{\second} (2 minutes 45 seconds). We report following
+duration, angular error and target losses, and devote the larger part of this
+paper to the quirks and failure modes that remain, several of which are
+consequences of the sensing envelope rather than of the control rules.
 \end{abstract}
 
 \section{Introduction}
@@ -59,10 +58,10 @@ and privileged state, while permitting internal controller state of the
 PI/PID kind.
 
 Our contribution is deliberately small. The interesting content of this report
-is not the controller, which is roughly 120 lines, but the catalogue of ways
-in which a correct-looking reactive rule set misbehaves once five copies of it
-interact in a shared environment. Section~\ref{sec:limitations} is therefore
-the longest section, by intent.
+is not the controller alone, but the catalogue of ways in which a
+correct-looking reactive rule set misbehaves once five copies of it interact
+in a shared environment. Section~\ref{sec:limitations} is therefore the
+longest section, by intent.
 
 \section{Simulation Model and Sensing}
 
@@ -143,7 +142,7 @@ Perception reduces each frame to the nearest red and the nearest green, as
 2 & \texttt{AVOID\_RED}   & red nearer, $d_r<0.90$ & turn right \\
 3 & \texttt{FOLLOW}       & green visible          & steer to it, speed ramp \\
 4 & \texttt{APPROACH}     & red only, $d_r\ge0.90$ & steer to it \\
-5 & \texttt{OBSTACLE\_*}  & no robot, LiDAR $<2.0$ & escape \\
+5 & \texttt{OBSTACLE\_*}  & no robot, LiDAR $<0.25$ & escape \\
 -- & \texttt{BASE\_CURVE} & otherwise              & $v_0$, $\omega_{\text{base}}$ \\
 \bottomrule
 \end{tabular}
@@ -159,23 +158,20 @@ rule applies next drives off in the direction the rotation happened to reach.
 Three design points proved necessary rather than cosmetic.
 
 \paragraph{Red is a comparison, not a detection}
-Rules 1--2 require red to be \emph{nearer than green}, not merely visible.
 Every robot being followed presents a red half somewhere in view, so keying on
 visibility made followers abandon correct leaders.
 
 \paragraph{Rules 1 and 5 must agree on a direction}
 They respond to the same physical situation seen through different sensors,
 so they must not disagree about which way to turn. Section~\ref{sec:esc}
-describes what happened when they did.
-
-\paragraph{Turn rate is capped by radius, not by a fixed rate}
-Steering straight at a leader is pure pursuit, which cuts inside the leader's
-path. In a five-robot ring the leader sits about \SI{0.63}{\radian} off-axis,
-giving $\omega = 1.5\times0.63 = \SI{0.94}{\radian\per\second}$ and an arc
-radius of $v/\omega \approx \SI{0.15}{\metre}$ against a \SI{0.95}{\metre}
-ring: the formation spirals inward until it piles up. We cap by
-$\omega_{\max} = v_0/R_{\min}$ rather than by a shared $\omega$, because the
-robots run at different speeds (\SIrange{0.12}{0.16}{\metre\per\second}) and a
+For the current obstacle-world experiment, the five robots start in a spread
+cross formation in the 12 by 12 metre arena: four robots are placed near the
+arena sides and one near the centre. The world contains four static obstacles
+(two cylinders, a box and a low rectangular barrier). We record per robot:
+following duration, mean absolute bearing error while following, target losses
+(transitions out of a following state) and bumper contacts. The measured time
+for the robots to complete one full circuit is \SI{165}{\second}; this is a
+single observed run rather than a mean over repeated trials.
 shared cap would give each a different radius and distort the ring.
 
 \section{Experimental Method}
@@ -191,10 +187,11 @@ configurations has not yet been quantified, so the timings below should be
 read as characteristic rather than as means over a sample.
 
 \section{Results}
-Table~\ref{tab:results} gives per-robot figures from a \SI{291}{\second}
-observation of the controller described above. The system is quiet: 48 mode
-changes across all five robots, \SI{9.9}{\per\minute}, where earlier
-iterations of this controller produced several hundred per minute.
+Table~\ref{tab:results} gives historical per-robot figures from a
+\SI{291}{\second} compact-ring observation of the controller. It is retained
+for comparison, but is not the result of the current 12 by 12 metre,
+four-obstacle experiment. The current run completed one full circuit in
+\SI{165}{\second}.
 
 \begin{table}[t]
 \caption{Per-robot results, \SI{291.2}{\second} run.}
@@ -219,7 +216,8 @@ Time-weighted occupancy was \texttt{FOLLOW} 71.9\%, \texttt{BASE\_CURVE}
 (\texttt{AVOID\_RED} 0.3\%, \texttt{ESCAPE\_TURN} 0.2\%,
 \texttt{AVOID\_WALL} 0.1\%).
 
-Formation proceeds in five phases: \SI{82}{\second} of scattered search;
+In the historical compact-ring run, formation proceeded in five phases:
+\SI{82}{\second} of scattered search;
 \SI{34}{\second} of first acquisitions; an \SI{11}{\second} congestion
 incident; \SI{59}{\second} of re-forming; and then a stable train, which persisted for
 the remaining \SI{105}{\second} with no avoidance event at all and showed no
@@ -378,24 +376,19 @@ remains event-driven. Any statistic computed from these logs understates
 within-state extremes, and the metrics in Section~V should be read with that
 in mind.
 
-\subsection{The delivered controller has no test coverage}
-The repository contains ten test modules. All of them exercise the previous
-\texttt{safe\_logic} cascade and its marker-based perception, neither of which
-is part of the delivered system; they import symbols that no longer exist and
-would fail at collection. The current controller --- the one that produced
-every result in this paper --- is covered by no automated test at all.
-
-This matters more than it looks, because the suite was green throughout the
-period when the LiDAR could not see a robot closer than \SI{0.75}{\metre}. The
-tests were written against synthetic scans and agreed with every change we
-made, including changes that did nothing in simulation. Passing tests were an
-active source of false confidence, and we came to rely on measurements from
-the simulator instead.
+\subsection{Tests are logic-level, not physics-level}
+The repository contains regression tests for the safety cascade, marker
+perception and corner/obstacle decisions. These tests use synthetic sensor
+snapshots and therefore do not validate Webots contact physics, camera
+occlusion or the measured circuit time. The tests are useful for detecting
+contradictory steering decisions, but the obstacle-world result still requires
+an actual Webots run.
 
 \section{Conclusion}
 A five-rule reactive controller, acting on one frontal snapshot at a time,
-assembled five robots into a stable leader-plus-four-followers train in
-\SI{186}{\second} and held it without further intervention. The rules were
+enabled the five robots to complete a full circuit of the current large world
+in \SI{165}{\second}. The world contains four static obstacles and uses
+separated starting poses rather than the earlier compact ring. The rules were
 cheap; the difficulty was almost entirely in the interaction between the
 sensing envelope and the geometry of a multi-robot formation. The dominant
 failure mode we did not eliminate --- bistable detection at the edge of the
