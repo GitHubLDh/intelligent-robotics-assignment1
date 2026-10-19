@@ -126,7 +126,7 @@ Solid {
 
 # Five robots on one line, all facing in the positive x direction.
 SimpleDiffRobot {
-  translation -2.0000 0.0000 0.085
+  translation 3.0000 0.0000 0.085
   rotation 0 0 1 0
   name "R1"
   controller "udp_diff_driver"
