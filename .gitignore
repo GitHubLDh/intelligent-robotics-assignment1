@@ -28,4 +28,6 @@ __pycache__/
 article/*.aux
 article/*.log
 article/*.out
-.texlive/*
+.texlive/*article/*.fls
+article/*.fdb_latexmk
+article/*.synctex.gz

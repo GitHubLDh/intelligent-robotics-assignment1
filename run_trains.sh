@@ -1,6 +1,6 @@
 #!/bin/bash
-# Starts all 3 pieces of the reactive_following_step9_tuned_clearance system:
-# Webots (the body), bridge_all.py (the translator), follow_improved.py (the brain).
+# Starts all 3 pieces of the following_robots system:
+# Webots (the body), bridge_all.py (the translator), reactive_follow.py (the brain).
 # Usage: ./run_trains.sh [1-5 | world_file_name] [-- follower args]
 #
 # Starting layout: pass 1-5 to place the robots before launching.
@@ -22,7 +22,7 @@
 set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$REPO_DIR/ros2_ws/src/reactive_following_step9_tuned_clearance"
+PKG_DIR="$REPO_DIR/ros2_ws/src/following_robots"
 WORLD="big_no_obstacles.wbt"
 LAYOUT=""
 # A bare 1-5 selects a starting layout; anything else is a world file name.
