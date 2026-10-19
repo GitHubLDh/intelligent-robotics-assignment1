@@ -32,20 +32,31 @@ up202400230@up.pt}
 \maketitle
 
 \begin{abstract}
-We present a purely reactive controller that makes five differential-drive
-robots form a following chain in Webots, driven by five ROS~2 nodes. Each
-robot acts on a single current snapshot from a frontal camera and LiDAR
-($100^\circ$, \SI{4}{\metre}); there is no target memory, no global pose and no
-inter-robot communication. Robot orientation is read directly from colour:
-the front half of each chassis is red and the rear half green, so ``facing
-me'' and ``facing away'' reduce to which colour is nearer. The controller is
-five prioritised rules. In the current large arena, with four static
-obstacles and separated starting poses, the robots complete a full circuit
-of the world in \SI{165}{\second} (2 minutes 45 seconds). We report following
-duration, angular error and target losses, and devote the larger part of this
-paper to the quirks and failure modes that remain, several of which are
-consequences of the sensing envelope rather than of the control rules.
+We present a purely reactive controller for five differential-drive robots
+that follow one another in Webots through ROS~2. Every decision uses one
+current local snapshot: a frontal colour-recognition camera and a frontal
+LiDAR, both with a $100^\circ$ horizontal field of view and a \SI{4}{\metre}
+range. The robots share no pose, target identity, map or communication
+channel, and the controller does not retain a target after it disappears.
+The front and rear halves of each chassis are red and green, respectively,
+so the nearer colour distinguishes a robot facing the observer from one that
+can be followed. Priority rules select following, approach, head-on
+avoidance, obstacle escape or a base curve; a separate safety layer handles
+contact recovery. We evaluate the implementation in a \SI{12}{\metre} by
+\SI{12}{\metre} Webots arena containing four static obstacles. A recorded
+run completes one full circuit in \SI{165}{\second}; an earlier compact-ring
+run is retained as a comparison and reports per-robot following occupancy,
+losses and bearing error. The results show that the basic behaviour works,
+but also expose important limitations: frontal sensing cannot react to side
+or rear contacts, recognition is bistable at the camera boundary, and the
+reported circuit time is a single observation rather than a statistical
+benchmark. We discuss these trade-offs and define a repeatable seeded-start
+protocol for future trials.
 \end{abstract}
+\begin{IEEEkeywords}
+reactive robotics, multi-robot following, Webots, ROS~2, LiDAR, robot
+simulation
+\end{IEEEkeywords}
 
 \section{Introduction}
 The task is reactive following: five robots, each deciding only from its own
@@ -53,15 +64,23 @@ current sensor readings, should aggregate into one or more following chains.
 The constraints are those of classical reactive control in the sense of
 Brooks' subsumption architecture~\cite{brooks1986}: behaviour is a priority
 ordering over situation--action rules, with no world model and no planning.
+This behavior-based framing also follows the broader robotics treatment in
+Arkin~\cite{arkin1998}.
 The assignment additionally forbids GPS, global localisation, target memory
 and privileged state, while permitting internal controller state of the
 PI/PID kind.
 
-Our contribution is deliberately small. The interesting content of this report
-is not the controller alone, but the catalogue of ways in which a
-correct-looking reactive rule set misbehaves once five copies of it interact
-in a shared environment. Section~\ref{sec:limitations} is therefore the
-longest section, by intent.
+Our contribution is threefold: (i) a reproducible five-robot reactive
+controller with an auditable ROS~2 information boundary, (ii) a geometric
+LiDAR mounting solution that keeps frontal peers and low walls observable,
+and (iii) an empirical failure analysis that identifies which limitations
+come from sensing rather than rule priority. These claims are evaluated in
+Webots with local regression tests and one recorded obstacle-world run.
+
+\textbf{One-sentence summary:} Five independently controlled robots form and
+maintain a following train using only instantaneous frontal camera and LiDAR
+observations, while the experiments expose the limits of that sensing-only
+architecture.
 
 \section{Simulation Model and Sensing}
 
@@ -99,14 +118,18 @@ and necessary to clear its own chassis --- the LiDAR sits \emph{above} the
 of view, the beam only descends to body height at
 \begin{equation}
 d \;=\; \frac{0.155-0.125}{\tan(\theta_v/2)} \;\approx\; \SI{0.75}{\metre},
+\label{eq:blind}
 \end{equation}
 so a peer closer than \SI{0.75}{\metre} is invisible. Every collision
 threshold we might wish to set lies inside that blind radius. Worse, the
 blindness is unavoidable for a \emph{central} sensor: to avoid seeing its own
 rim at radius $r_b$ the beam drop at $r_b$ must stay under the clearance $c$,
 while seeing a peer at distance $d$ requires the drop at $d-r_b$ to reach $c$.
-Both $\theta_v$ and $c$ cancel, leaving $d > 2r_b$ --- twice the body radius,
-which is exactly the distance at which two robots already touch.
+Both $\theta_v$ and $c$ cancel, leaving $d > 2r_b$. For the body radius this
+is \SI{0.230}{\metre}; the bumper-defined contact distance is instead
+\SI{0.292}{\metre}. The distinction matters because the LiDAR blind-spot
+argument concerns body visibility, whereas the measured contact event comes
+from the bumper.
 
 The resolution exploits the fact that the LiDAR is now frontal. Mounted at the
 \emph{front edge} ($x=\SI{0.130}{\metre}$, outside the body radius), every
@@ -119,10 +142,65 @@ own chassis.
 \subsection{Software architecture}
 Webots runs one controller per robot, which packs a camera/LiDAR snapshot into
 a UDP datagram. A ROS~2 bridge republishes each as
-\texttt{/R\textit{i}/local\_sensors}; five independent \texttt{ReactiveFollower}
+\texttt{/R\textit{i}/local\_sensors}; five independent \texttt{SafeFollower}
 nodes subscribe and publish \texttt{/R\textit{i}/cmd\_vel}. No node subscribes
 to another robot's topics, which is what makes the no-communication constraint
 auditable rather than merely asserted.
+
+The implementation uses ROS~2 Jazzy~\cite{ros2} and the \texttt{rclpy} API. The bridge
+publishes a synchronized local snapshot, \texttt{sensor\_msgs/LaserScan},
+camera visibility and contact diagnostics, while controllers publish
+\texttt{geometry\_msgs/Twist}. ROS provides namespaced topics, timers and
+execution at 20 Hz; it does not provide localization, navigation, a global
+planner or inter-robot messages. The simulator is Webots R2025a
+\cite{webots}, with a custom \texttt{SimpleDiffRobot} rather than an
+unmodified stock robot. The base
+model was altered with a frontal camera, a front-mounted three-layer LiDAR,
+red/green directional half-shells, differential-wheel actuation and a contact
+bumper. No sensor noise is injected in the present experiments; uncertainty
+comes from finite range, occlusion, field-of-view clipping and simulator
+geometry.
+
+The resulting platform facts are summarized in Table~\ref{tab:platform}; the
+camera and LiDAR are local inputs, while the bumper is a local contact event
+rather than a ranging sensor.
+
+\begin{table}[t]
+\caption{Simulation platform and sensing configuration.}
+\label{tab:platform}
+\centering
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+Item & Configuration \\
+\midrule
+Middleware & ROS~2 Jazzy, \texttt{rclpy}, namespaced topics \\
+Simulator & Webots R2025a \\
+Robot & Five custom differential-drive \texttt{SimpleDiffRobot}s \\
+Arena & \SI{12}{\metre} $\times$ \SI{12}{\metre}, perimeter walls \\
+Obstacles & Two cylinders, one box, one low barrier \\
+Camera & Recognition, 320$\times$160 px, $100^\circ$, \SI{4}{\metre} \\
+LiDAR & 360 samples, 3 layers, $0.04$ rad vertical FOV, \SI{4}{\metre} \\
+Update & Webots 32 ms; bridge/controller 50 ms \\
+Noise & No artificial noise; occlusion and clipping retained \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../docs/architecture.pdf}
+\caption{Information flow from each robot's local Webots devices through UDP
+and the ROS~2 bridge to its namespaced controller. Dashed feedback is the next
+local snapshot; the dotted edge emphasizes that controllers exchange no
+topics.}
+\label{fig:architecture}
+\end{figure}
+
+Figure~\ref{fig:architecture} makes the locality and the absence of a central
+planner explicit. The repository also contains diagnostic Webots worlds for
+camera markers, low walls, head-on encounters and corners; no trajectory
+image is claimed here because the recorded run did not save pose traces.
 
 \section{Reactive Controller}
 Perception reduces each frame to the nearest red and the nearest green, as
@@ -134,26 +212,60 @@ Perception reduces each frame to the nearest red and the nearest green, as
 \label{tab:rules}
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}clll@{}}
 \toprule
 \# & State & Condition & Action \\
 \midrule
-1 & \texttt{ESCAPE\_*}    & red nearer, $d_r<0.45$ & escape \\
-2 & \texttt{AVOID\_RED}   & red nearer, $d_r<0.90$ & turn right \\
-3 & \texttt{FOLLOW}       & green visible          & steer to it, speed ramp \\
-4 & \texttt{APPROACH}     & red only, $d_r\ge0.90$ & steer to it \\
-5 & \texttt{OBSTACLE\_*}  & no robot, LiDAR $<0.25$ & escape \\
--- & \texttt{BASE\_CURVE} & otherwise              & $v_0$, $\omega_{\text{base}}$ \\
+1 & \texttt{EMERGENCY\_*} & contact-range hazard & stop/back off \\
+2 & \texttt{FOLLOW\_HOLD} & rear target at standoff & hold \\
+3 & \texttt{YIELD\_*} & oncoming red / head-on & turn or reverse \\
+4 & \texttt{AVOID\_*} & LiDAR clearance low & turn/back off \\
+5 & \texttt{FOLLOW} & green rear visible & steer, speed ramp \\
+6 & \texttt{BASE\_CURVE} & otherwise & $v_0$, $\omega_{\text{base}}$ \\
+-- & \texttt{COLLISION\_*} & bumper event & recover, then wait \\
 \bottomrule
 \end{tabular}
+}
 \end{table}
 
-The \emph{escape} shared by rules 1 and 5 reverses at
+The emergency and avoidance actions use the same conservative escape policy:
+it reverses at
 \SI{0.06}{\metre\per\second} if the LiDAR reads under \SI{0.25}{\metre}
 (\texttt{\_BACK}), and otherwise rotates on the spot, always clockwise, until
 the forward cone is clear (\texttt{\_TURN}). It never advances. Being
 stateless, it simply stops firing once the way ahead opens, and whichever
 rule applies next drives off in the direction the rotation happened to reach.
+
+The deployed safety controller also has a contact-triggered layer. A bumper
+event is local physical feedback: it can report that contact occurred even
+when the camera and LiDAR could not predict a side or rear collision. It does
+not provide contact identity or global pose. The recovery backs off, creeps or
+advances according to current local clearances, then waits before retrying.
+
+\begin{table}[t]
+\caption{Robot-specific base-curve parameters from the committed
+configuration.}
+\label{tab:base}
+\centering
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Robot & $v_0$ (m/s) & $\omega_{\rm base}$ (rad/s) \\
+\midrule
+R1 & 0.16 & -0.13 \\
+R2 & 0.14 &  0.09 \\
+R3 & 0.12 & -0.08 \\
+R4 & 0.15 &  0.15 \\
+R5 & 0.13 & -0.12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The robot-specific $v_0$ and $\omega_{\rm base}$ values in Table~\ref{tab:base}
+are the only deliberate per-robot differences in the base curve; safety and
+following thresholds are shared. The LiDAR clearance relation is given in
+Equation~\ref{eq:blind}.
 
 Three design points proved necessary rather than cosmetic.
 
@@ -164,34 +276,65 @@ visibility made followers abandon correct leaders.
 \paragraph{Rules 1 and 5 must agree on a direction}
 They respond to the same physical situation seen through different sensors,
 so they must not disagree about which way to turn. Section~\ref{sec:esc}
-For the current obstacle-world experiment, the five robots start in a spread
-cross formation in the 12 by 12 metre arena: four robots are placed near the
-arena sides and one near the centre. The world contains four static obstacles
-(two cylinders, a box and a low rectangular barrier). We record per robot:
-following duration, mean absolute bearing error while following, target losses
-(transitions out of a following state) and bumper contacts. The measured time
-for the robots to complete one full circuit is \SI{165}{\second}; this is a
-single observed run rather than a mean over repeated trials.
-shared cap would give each a different radius and distort the ring.
+describes the resulting failure and the shared fix.
 
 \section{Experimental Method}
-The five robots start evenly spaced on a \SI{0.95}{\metre} circle, each
-heading along the tangent. We record per robot: following duration, mean
-absolute bearing error while following, target losses (transitions out of a
-following state) and bumper contacts. A seeded script
-(\texttt{tools/randomize\_starts.py}) regenerates scattered starting poses so
-that runs can be repeated with different positions and headings while
-remaining reproducible, and a command-line flag selects the turning strength
-for the no-following / weak / strong comparison. Variance across starting
-configurations has not yet been quantified, so the timings below should be
-read as characteristic rather than as means over a sample.
+The primary trial uses the \texttt{big\_four\_obstacles.wbt} world. The five
+robots begin in separated poses in the arena, run until a full circuit is
+completed, and are observed with the same controller and configuration. We
+define a full circuit as one traversal of the arena's perimeter route that
+returns the lead robot to its starting side; it is not a closed-loop pose
+estimate because no global pose is available to the controller. The static
+obstacles are a radius-\SI{0.42}{\metre}, \SI{0.60}{\metre}-high cylinder at
+(-2.40,2.10), a rotated \SI{1.10}{\metre}$\times$\SI{0.75}{\metre}
+$\times$\SI{0.50}{\metre} box at (2.45,2.00), a radius-\SI{0.34}{\metre},
+\SI{0.44}{\metre}-high cylinder at (2.30,-2.20), and a
+\SI{1.35}{\metre}$\times$\SI{0.45}{\metre}$\times$\SI{0.36}{\metre} barrier
+at (-2.45,-2.10), in metres.
+We
+record circuit completion time, per-robot following duration, mean absolute
+bearing error while following, target losses (transitions out of a following
+state), and bumper contacts. The offline regression suite exercises safety
+priority, marker classification, LiDAR geometry and corner recovery with
+synthetic snapshots; it does not replace a Webots physics trial.
+
+The protocol is repeatable but not yet statistically complete. The seeded
+script \texttt{tools/randomize\_starts.py} samples five positions within
+$\pm\SI{2.6}{\metre}$, enforces a minimum pairwise gap of \SI{2}{\metre},
+and samples headings uniformly from $[0,2\pi)$; the same seed reproduces a
+layout. For a valid comparison, the same seed is used across controller
+variants and different seeds are used across repetitions. No noise or random
+sensor dropout is added, although contact recovery includes a random
+\SIrange{0}{1}{\second} restart delay. This protocol was not executed for
+the present paper: only one obstacle-world run has been timed, so the
+reported \SI{165}{\second} is descriptive, not a mean or claim of
+generality. Webots pose traces were not saved, so no trajectory plot or
+current-run occupancy statistics are fabricated.
 
 \section{Results}
+\label{sec:results}
 Table~\ref{tab:results} gives historical per-robot figures from a
-\SI{291}{\second} compact-ring observation of the controller. It is retained
-for comparison, but is not the result of the current 12 by 12 metre,
-four-obstacle experiment. The current run completed one full circuit in
-\SI{165}{\second}.
+\SI{291.2}{\second} compact-ring observation window; it is not a circuit
+time and is not the result of the current four-obstacle experiment. The
+current run completed one defined perimeter circuit in \SI{165}{\second}.
+
+\begin{table}[t]
+\caption{Comparison of the two recorded observations. The worlds and starts
+differ, so this is descriptive rather than a controlled comparison.}
+\label{tab:comparison}
+\centering
+\small
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Trial & Arena/obstacles & Observation & Recorded metric \\
+\midrule
+Compact ring (historical) & compact / not comparable & \SI{291.2}{s} & 71.9\% FOLLOW \\
+Current obstacle world & $12\times12$ m / four & \SI{165}{s} & 1 perimeter circuit \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
 
 \begin{table}[t]
 \caption{Per-robot results, \SI{291.2}{\second} run.}
@@ -219,17 +362,28 @@ Time-weighted occupancy was \texttt{FOLLOW} 71.9\%, \texttt{BASE\_CURVE}
 In the historical compact-ring run, formation proceeded in five phases:
 \SI{82}{\second} of scattered search;
 \SI{34}{\second} of first acquisitions; an \SI{11}{\second} congestion
-incident; \SI{59}{\second} of re-forming; and then a stable train, which persisted for
-the remaining \SI{105}{\second} with no avoidance event at all and showed no
-sign of degrading. The end state is the intended one --- R3 leading on its
+incident; \SI{59}{\second} of re-forming; and then a train that persisted for
+the remaining \SI{105}{\second} with no logged avoidance event. The end state
+was the intended one --- R3 leading on its
 base curve, R1, R2, R4 and R5 following --- which is why R3's low following
 percentage is a success rather than a failure: the leader of a train is, by
 definition, not following anything.
 
-Mean absolute bearing error while following was \SI{0.549}{\radian}
-($31.5^\circ$). This should not be read as tracking error. In a five-robot
+The unweighted mean of the five per-robot bearing errors is
+\SI{0.586}{\radian}; weighting by each robot's following time gives
+\SI{0.644}{\radian}. Neither should be read as tracking error. In a five-robot
 ring the leader is geometrically about $36^\circ$ off-axis, so the measured
-value is close to the best achievable for this formation.
+values are dominated by formation geometry rather than a zero-error target.
+
+The comparison is intentionally limited: the two trials use different
+starting layouts and worlds, so the shorter current time cannot be interpreted
+as a controller improvement. The useful result is instead the combination of
+successful circuit completion, the per-robot table, and the explicit account
+of unmeasured variance. The main advantages are low computational complexity,
+auditable local information flow and graceful rule-level safety behaviour.
+The main limitations are the single-run benchmark, absent artificial noise,
+frontal-only sensing and the lack of a quantitative success rate over random
+seeds.
 
 \section{Quirks, Shortcomings and Limitations}
 \label{sec:limitations}
@@ -239,34 +393,14 @@ sensing envelope and cannot be fixed inside the control rules at all.
 
 \subsection{Close-range escape: two rules that disagreed}
 \label{sec:esc}
-The original design had rule 1 turn clockwise and rule 5 turn toward whichever
-half of the cone was more open. The two then contradicted each other whenever
-a robot was close enough that the camera could not reliably classify it.
-
-At contact the bearing to a peer is extremely sensitive to lateral offset: at
-\SI{0.15}{\metre}, \SI{1}{\centi\metre} sideways is $6^\circ$ and
-\SI{8}{\centi\metre} is $39^\circ$. Two robots pressed together therefore put
-each other's red half near the $\pm50^\circ$ cone edge, where detection
-alternates frame to frame. Logs show the consequence directly: of 53
-\texttt{AVOID\_WALL} commands, none carried any camera detection, and they
-interleave with \texttt{ESCAPE\_TURN} lines reading
-\texttt{red=0.15@+0.86}. The pair alternated between a clockwise command and
-an anticlockwise one and sat spinning against each other, faces touching.
-
-The same rule also made a robot grind along a wall, for two further reasons:
-it returned full forward speed while turning, so it drove into what it was
-avoiding; and clearance was measured over only $\pm15^\circ$, so a wall met
-obliquely was never ``ahead'' at all and nothing fired.
-
-Both are now one escape, shared by rules 1 and 5, always clockwise, never
-advancing, reversing when the LiDAR reads under \SI{0.25}{\metre}, and
-measuring clearance over $\pm45^\circ$. We stopped trying to distinguish the
-cases: a peer seen only by its wheel is indistinguishable from a wall, and
-since the correct response is the same, the distinction was never needed. The
-remaining weakness is that the escape is purely open-loop in direction --- it
-always turns the same way, which is what guarantees two robots separate, but
-also means a robot in a corner will rotate until some direction happens to
-clear rather than choosing the best one.
+The original close-range rules could disagree when a peer alternated between
+camera-visible and anonymous LiDAR obstacle. At \SI{0.15}{\metre}, a lateral
+offset of \SI{1}{\centi\metre} changes bearing by about $3.8^\circ$ and
+\SI{8}{\centi\metre} by about $28.1^\circ$, making the $\pm50^\circ$ camera
+boundary easy to cross. The deployed controller unifies these cases: it turns
+clockwise without advancing, reverses only when local clearance permits, and
+uses a $\pm45^\circ$ obstacle cone. This removes left/right chatter but leaves
+open-loop corner behaviour.
 
 \subsection{Bistable detection at the edge of the field of view}
 A target sitting near $\pm50^\circ$ is alternately inside and outside the
@@ -275,106 +409,32 @@ more than the margin separating it from the boundary. The controller has no
 notion of a marginal detection: a target is either present or absent, and
 different rules fire in the two cases.
 
-The congestion incident shows the consequence. R3 and R5 each met an oncoming
-robot, turned right, and recovered in about \SI{1.4}{\second} --- the rule
-behaving exactly as intended. R4 instead alternated between
-\texttt{AVOID\_WALL} and \texttt{ESCAPE\_TURN} three times in
-\SI{4}{\second}. Those two rules require contradictory inputs: rule~1 needs a
-red robot inside \SI{0.45}{\metre}, rule~5 needs \emph{no} robot visible at
-all. Both were true in alternate frames because the robot was at
-$+49.2^\circ$, which is the bearing recorded when the episode finally
-resolved. The robot was not confused about what to do; it was given two
-different worlds to act in.
+At the field-of-view boundary, one frame can classify a peer as a red robot
+and the next as no robot. This produced short avoidance oscillations in the
+diagnostic logs. Hysteresis would reduce the chatter, but retaining it would
+introduce target memory, so the present implementation accepts this limitation
+to preserve the assignment's instantaneous-snapshot constraint.
 
-The cost is a few seconds of thrashing, and then however long the train takes
-to re-form around the disturbed robot --- of the order of a minute. Suppressing it requires asymmetric
-acquire/drop thresholds --- accept a target at $50^\circ$ but only discard it
-past, say, $52^\circ$ --- which is a deliberate piece of remembered state and
-therefore a judgement call against the brief's prohibition on target memory.
-We left it in rather than quietly adding hysteresis.
-
-\subsection{The highest-priority rule is not the fastest-acting rule}
-All commands pass through an acceleration limiter before reaching the wheels,
-which exists so that a target appearing at the edge of the cone cannot produce
-an instantaneous full-rate swing. It is applied uniformly, including to the
-emergency rule.
-
-\texttt{ESCAPE\_TURN} commands $v=0,\ \omega=-0.80$. The log records
-$v=0.12,\ \omega=+0.37$ on the tick it engages: the robot is still rolling
-\emph{forward} and still turning \emph{left}, because the limiter is unwinding
-whatever the previous rule had commanded. Full reversal of a turn takes of the
-order of \SI{0.2}{\second}, during which the highest-priority rule in the
-system is only partially in effect. The robot travels perhaps
-\SI{0.02}{\metre} toward the hazard in that window --- small, but it means the
-priority ordering in Table~\ref{tab:rules} describes the \emph{decision}, not
-the actuation. A correct treatment would exempt rule~1 from the limiter, at
-the cost of permitting one genuinely abrupt command.
-
-\subsection{Nothing can be sensed to the side or rear}
-Both sensors span $100^\circ$ forward. A robot alongside or behind is not
-poorly sensed, it is \emph{unsensed}: no reading distinguishes it from empty
-space. Sideways and rear-end contact are therefore undetectable in principle,
-and no control rule can respond to them, because no rule has an input that
-changes when they occur.
-
-Everything we do about it is preventive rather than reactive --- the turn-rate
-cap stops followers cutting across each other's paths, and the priority of
-rule~3 keeps a follower locked to the robot ahead rather than swinging toward
-a newcomer. These reduce the frequency of robots ending up abreast; they
-cannot detect or recover from it. This is the single largest gap between the
-system and a deployable follower, and closing it needs a sensor, not a rule:
-either a rear camera, a side-mounted range sensor, or staggering the LiDAR
-heights per robot so peers remain mutually visible through a full circle.
+\subsection{Prediction versus contact recovery}
+Both active ranging and recognition are frontal and span $100^\circ$.
+Therefore a robot alongside or behind is not predicted by those sensors; it
+is indistinguishable from empty space until geometry or the bumper changes.
+The statement ``undetectable'' applies to pre-contact side/rear perception,
+not to the Webots bumper. The bumper reports a local contact event without
+revealing the contacting robot, its direction or a global pose. The safety
+layer then uses the current front/rear LiDAR clearances and contact state to
+back off, creep or advance, followed by a randomized wait. This can recover
+from some side/rear contacts, but cannot explain or avoid them in advance.
+Closing that gap needs a side or rear sensor.
 
 \subsection{Formation geometry is coupled to the turn cap by hand}
-Three parameters that look independent are not. For five robots on a ring,
-spacing and radius satisfy $s = 2R\sin(\pi/5) = 1.176R$, and the camera reads
-\SI{0.19}{\metre} less than centre spacing because it sits \SI{0.130}{\metre}
-ahead of its own centre and the green half \SI{0.060}{\metre} behind the
-leader's. A chosen standoff therefore \emph{implies} a ring radius, which must
-in turn be something the turn-rate cap can actually drive.
-
-We violated this without noticing. A standoff of \SI{0.45}{\metre} implies a
-\SI{0.54}{\metre} ring, while the cap refused any arc tighter than
-\SI{0.90}{\metre}. The two demands are unsatisfiable simultaneously, and the
-observable result was that all five robots closed to the standoff, hit the
-speed floor and crawled at \SI{0.03}{\metre\per\second} --- a symptom that
-looks like a control bug and is actually an inconsistent parameter set. The
-present values agree, but nothing in the code checks the relationship, and
-anyone retuning one of the three will reintroduce the fault. A constructor
-assertion would catch it.
-
-\subsection{The controller cannot be single-stepped}
-Snapshot freshness is judged with a wall-clock timer, while the simulator
-emits snapshots on simulation time. The two agree only while Webots runs at
-approximately real time. Stepping the simulation tick by tick --- the natural
-way to inspect a manoeuvre --- halts simulation time while wall time
-continues, so every robot declares its data stale and drops to
-\texttt{SENSOR\_FAILSAFE} within a second of each click.
-
-This is not merely an inconvenience: it means the system cannot be observed in
-the mode one would most want to observe it in, and a log recorded while
-stepping is not comparable with one recorded while running. We produced
-exactly that confusion, attributing \SI{70}{\percent} of robot-time to sensor
-dropouts and concluding the simulator was running below real time; the same
-configuration run freely spends \SI{0.0}{\percent} in that state. The
-conclusion was wrong and the evidence had looked strong. A simulation-time
-clock would remove the problem.
-
-\subsection{Logging is event-driven, so within-state extremes are invisible}
-A line is written only when a robot changes mode. A quantity that rises and
-falls \emph{within} one mode leaves no trace. This is not a cosmetic issue:
-it caused us to misdiagnose a collision. \texttt{APPROACH} was recorded at
-$\omega=0.27$, and the next line --- a different mode --- showed $0.73$. Since
-the rule that follows caps $\omega$ at $0.14$, the $0.73$ must have been
-carried in, so the true peak inside \texttt{APPROACH} was at least $0.73$ and
-plausibly the $1.1$ ceiling. The log showed a mild turn immediately before a
-violent one.
-
-Target range has since been added to each line, which helps, but the sampling
-remains event-driven. Any statistic computed from these logs understates
-within-state extremes, and the metrics in Section~V should be read with that
-in mind.
+For five robots on a ring, spacing and radius satisfy
+$s=2R\sin(\pi/5)=1.176R$, while the camera reads \SI{0.19}{\metre} less than
+centre spacing. Thus a chosen standoff implies a ring radius that must be
+compatible with the turn-rate cap, the same curvature trade-off seen in
+pure-pursuit tracking~\cite{coulter1992}. Earlier inconsistent values forced
+the formation to the speed floor; the current parameters avoid that case, but
+the code still lacks an assertion to catch future retuning errors.
 
 \subsection{Tests are logic-level, not physics-level}
 The repository contains regression tests for the safety cascade, marker
@@ -394,6 +454,17 @@ sensing envelope and the geometry of a multi-robot formation. The dominant
 failure mode we did not eliminate --- bistable detection at the edge of the
 field of view --- is a property of where the sensor stops, not of what the
 controller decides.
+
+The proposal is therefore useful as a transparent baseline, not as a complete
+multi-robot navigation solution. Its advantages are that each robot is
+independent, the ROS interfaces make the information boundary inspectable,
+and the priority rules are easy to test with synthetic snapshots. Its
+limitations are equally concrete: there is no side or rear sensing, no target
+hysteresis or identity, no injected noise model, and no repeated statistical
+evaluation yet. The next experiment should execute the seeded protocol over
+multiple layouts and report success rate, contacts, completion time and
+confidence intervals. That would test whether the observed train is robust
+rather than merely reproducible in one favourable run.
 
 \begin{thebibliography}{9}
 \bibitem{brooks1986}
