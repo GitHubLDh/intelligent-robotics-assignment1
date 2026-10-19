@@ -117,19 +117,18 @@ and necessary to clear its own chassis --- the LiDAR sits \emph{above} the
 \SI{0.125}{\metre} body top of every other robot. With a narrow vertical field
 of view, the beam only descends to body height at
 \begin{equation}
-d \;=\; \frac{0.155-0.125}{\tan(\theta_v/2)} \;\approx\; \SI{0.75}{\metre},
+d \;=\; \frac{0.155-0.125}{\tan(\theta_v/2)} \;\approx\; \SI{1.50}{\metre},
 \label{eq:blind}
 \end{equation}
-so a peer closer than \SI{0.75}{\metre} is invisible. Every collision
-threshold we might wish to set lies inside that blind radius. Worse, the
-blindness is unavoidable for a \emph{central} sensor: to avoid seeing its own
-rim at radius $r_b$ the beam drop at $r_b$ must stay under the clearance $c$,
-while seeing a peer at distance $d$ requires the drop at $d-r_b$ to reach $c$.
-Both $\theta_v$ and $c$ cancel, leaving $d > 2r_b$. For the body radius this
-is \SI{0.230}{\metre}; the bumper-defined contact distance is instead
-\SI{0.292}{\metre}. The distinction matters because the LiDAR blind-spot
-argument concerns body visibility, whereas the measured contact event comes
-from the bumper.
+using the deployed $\theta_v=\SI{0.04}{\radian}$ vertical field of view, so a
+peer closer than \SI{1.50}{\metre} is invisible. Every collision
+threshold we might wish to set lies inside that blind radius. Worse, this
+blindness is unavoidable for a \emph{central} sensor: seeing its own rim at
+radius $r_b$ without missing a peer at $d$ requires $d>2r_b$ regardless of
+$\theta_v$ or clearance $c$. For the body radius this is \SI{0.230}{\metre},
+below the bumper-defined contact distance of \SI{0.292}{\metre} --- the
+blind-spot argument concerns body visibility, while the measured contact
+event comes from the bumper.
 
 The resolution exploits the fact that the LiDAR is now frontal. Mounted at the
 \emph{front edge} ($x=\SI{0.130}{\metre}$, outside the body radius), every
@@ -147,19 +146,16 @@ nodes subscribe and publish \texttt{/R\textit{i}/cmd\_vel}. No node subscribes
 to another robot's topics, which is what makes the no-communication constraint
 auditable rather than merely asserted.
 
-The implementation uses ROS~2 Jazzy~\cite{ros2} and the \texttt{rclpy} API. The bridge
-publishes a synchronized local snapshot, \texttt{sensor\_msgs/LaserScan},
-camera visibility and contact diagnostics, while controllers publish
-\texttt{geometry\_msgs/Twist}. ROS provides namespaced topics, timers and
-execution at 20 Hz; it does not provide localization, navigation, a global
-planner or inter-robot messages. The simulator is Webots R2025a
-\cite{webots}, with a custom \texttt{SimpleDiffRobot} rather than an
-unmodified stock robot. The base
-model was altered with a frontal camera, a front-mounted three-layer LiDAR,
-red/green directional half-shells, differential-wheel actuation and a contact
-bumper. No sensor noise is injected in the present experiments; uncertainty
-comes from finite range, occlusion, field-of-view clipping and simulator
-geometry.
+The implementation uses ROS~2 Jazzy~\cite{ros2} and \texttt{rclpy}: the
+bridge publishes a synchronized snapshot (\texttt{sensor\_msgs/LaserScan},
+camera visibility, contact diagnostics), and controllers publish
+\texttt{geometry\_msgs/Twist}. ROS supplies namespaced topics, timers and
+20\,Hz execution, not localization, navigation, a planner or inter-robot
+messages. The simulator is Webots R2025a~\cite{webots}, with a custom
+\texttt{SimpleDiffRobot} altered with a frontal camera, a front-mounted
+three-layer LiDAR, red/green half-shells, differential-wheel actuation and a
+contact bumper. No sensor noise is injected; uncertainty comes from finite
+range, occlusion, field-of-view clipping and simulator geometry.
 
 The resulting platform facts are summarized in Table~\ref{tab:platform}; the
 camera and LiDAR are local inputs, while the bumper is a local contact event
@@ -294,12 +290,12 @@ at (-2.45,-2.10), in metres.
 
 \begin{figure}[t]
 \centering
-\begin{minipage}{0.48\columnwidth}
+\begin{minipage}{0.42\columnwidth}
 \centering
 \includegraphics[width=\linewidth]{../docs/arena_setup.png}\\(a)
 \end{minipage}
 \hfill
-\begin{minipage}{0.48\columnwidth}
+\begin{minipage}{0.42\columnwidth}
 \centering
 \includegraphics[width=\linewidth]{../docs/train_formed.png}\\(b)
 \end{minipage}
@@ -405,6 +401,15 @@ The main limitations are the single-run benchmark, absent artificial noise,
 frontal-only sensing and the lack of a quantitative success rate over random
 seeds.
 
+Beyond this timed circuit, the controller was also exercised on several
+arenas from \texttt{tools/generate\_random\_world.py}, which randomizes all
+five starting poses and zero to five obstacles per seed in the same
+\SI{12}{\metre}$\times$\SI{12}{\metre} arena. In every run observed the five
+robots eventually formed a single chain; the same mechanisms discussed in
+Section~\ref{sec:limitations} --- bistable edge-of-view detection and
+open-loop corner or wall behaviour --- were what delayed convergence. This
+is a qualitative, non-tabulated observation, not a statistical batch.
+
 \section{Quirks, Shortcomings and Limitations}
 \label{sec:limitations}
 Each item below states the mechanism, the evidence for it, what it costs in
@@ -422,17 +427,15 @@ clockwise without advancing, reverses only when local clearance permits, and
 uses a $\pm45^\circ$ obstacle cone. This removes left/right chatter but leaves
 open-loop corner behaviour.
 
-Concretely: the rotation stops as soon as the forward cone reads clear, which
-is often when the robot ends up heading \emph{parallel} to the wall rather
-than away from it. Whichever rule fires next --- typically
-\texttt{BASE\_CURVE} with its own fixed $\omega_{\rm base}$ --- then drives
-off with no knowledge of why the rotation happened. If that fixed curve
-points back toward the same wall, the robot does not separate cleanly: it
-grazes along the wall, repeatedly re-entering and re-exiting the escape. The
-escape and the base curve are independent, stateless rules by design, so
-neither can take the other's exit heading into account; fixing this would
-require passing that heading forward, which is exactly the kind of state the
-assignment's instantaneous-snapshot constraint is meant to avoid.
+Concretely, the rotation stops once the forward cone clears, often leaving
+the robot heading \emph{parallel} to the wall rather than away from it.
+Whichever rule fires next --- typically \texttt{BASE\_CURVE} with its own
+fixed $\omega_{\rm base}$ --- has no knowledge of why that rotation
+happened, so if its curve points back at the same wall the robot grazes
+along it instead of separating. Escape and base curve are independent,
+stateless rules by design; fixing this would require passing the exit
+heading forward, exactly the kind of state the instantaneous-snapshot
+constraint is meant to avoid.
 
 \subsection{Bistable detection at the edge of the field of view}
 A target sitting near $\pm50^\circ$ is alternately inside and outside the
@@ -448,16 +451,14 @@ introduce target memory, so the present implementation accepts this limitation
 to preserve the assignment's instantaneous-snapshot constraint.
 
 \subsection{Prediction versus contact recovery}
-Both active ranging and recognition are frontal and span $100^\circ$.
-Therefore a robot alongside or behind is not predicted by those sensors; it
-is indistinguishable from empty space until geometry or the bumper changes.
-The statement ``undetectable'' applies to pre-contact side/rear perception,
-not to the Webots bumper. The bumper reports a local contact event without
-revealing the contacting robot, its direction or a global pose. The safety
-layer then uses the current front/rear LiDAR clearances and contact state to
-back off, creep or advance, followed by a randomized wait. This can recover
-from some side/rear contacts, but cannot explain or avoid them in advance.
-Closing that gap needs a side or rear sensor.
+Both active ranging and recognition are frontal and span $100^\circ$, so a
+robot alongside or behind is indistinguishable from empty space until
+geometry or the bumper changes --- ``undetectable'' applies to pre-contact
+side/rear perception, not to the bumper itself. A bumper event gives a local
+contact signal with no identity, direction or pose; the safety layer uses
+current LiDAR clearances and contact state to back off, creep or advance,
+then waits. This recovers from some side/rear contacts but cannot anticipate
+or avoid them; closing that gap needs an actual side or rear sensor.
 
 \subsection{Formation geometry is coupled to the turn cap by hand}
 For five robots on a ring, spacing and radius satisfy
@@ -467,6 +468,12 @@ compatible with the turn-rate cap, the same curvature trade-off seen in
 pure-pursuit tracking~\cite{coulter1992}. Earlier inconsistent values forced
 the formation to the speed floor; the current parameters avoid that case, but
 the code still lacks an assertion to catch future retuning errors.
+
+A related failure appears when a robot's own $\omega_{\rm base}$ is large:
+most randomized starts still converge, but if that robot ends up leading
+rather than following, its sharper base curve can cut back across its own
+followers' path and break the train on contact, rather than merely forcing
+the speed floor.
 
 \subsection{Tests are logic-level, not physics-level}
 The repository contains regression tests for the safety cascade, marker
@@ -487,16 +494,15 @@ failure mode we did not eliminate --- bistable detection at the edge of the
 field of view --- is a property of where the sensor stops, not of what the
 controller decides.
 
-The proposal is therefore useful as a transparent baseline, not as a complete
-multi-robot navigation solution. Its advantages are that each robot is
-independent, the ROS interfaces make the information boundary inspectable,
-and the priority rules are easy to test with synthetic snapshots. Its
-limitations are equally concrete: there is no side or rear sensing, no target
+The proposal is therefore a transparent baseline, not a complete multi-robot
+navigation solution: each robot is independent, the ROS interfaces make the
+information boundary inspectable, and the priority rules are easy to test
+with synthetic snapshots, but there is no side or rear sensing, no target
 hysteresis or identity, no injected noise model, and no repeated statistical
-evaluation yet. The next experiment should execute the seeded protocol over
+evaluation yet. The next experiment should run the seeded protocol over
 multiple layouts and report success rate, contacts, completion time and
-confidence intervals. That would test whether the observed train is robust
-rather than merely reproducible in one favourable run.
+confidence intervals, to test whether the observed train is robust rather
+than merely reproducible in one favourable run.
 
 \begin{thebibliography}{9}
 \bibitem{brooks1986}
