@@ -46,11 +46,12 @@ safety layer. We evaluate the implementation in a \SI{12}{\metre} by
 \SI{12}{\metre} Webots arena with four static obstacles. A recorded run
 completes one full circuit in \SI{165}{\second}; an earlier compact-ring run
 is retained for comparison, reporting per-robot following occupancy, losses
-and bearing error. The basic behaviour works, but also exposes important
-limitations: frontal sensing cannot react to side or rear contacts,
-recognition is bistable at the camera boundary, and the circuit time is a
-single observation rather than a statistical benchmark. We discuss these
-trade-offs and define a repeatable seeded-start protocol for future trials.
+and bearing error. Across several randomly generated worlds the robots consistently converged
+into a single chain. The behaviour works but exposes clear limitations:
+frontal sensing cannot react to side or rear contacts, recognition is
+bistable at the camera boundary, and those runs were observed rather than
+logged, leaving the timed circuit a single observation rather than a
+statistical benchmark.
 \end{abstract}
 \begin{IEEEkeywords}
 reactive robotics, multi-robot following, Webots, ROS~2, LiDAR, robot
@@ -269,6 +270,7 @@ so they must not disagree about which way to turn. Section~\ref{sec:esc}
 describes the resulting failure and the shared fix.
 
 \section{Experimental Method}
+\label{sec:method}
 The primary trial uses the \texttt{big\_four\_obstacles.wbt} world. The five
 robots begin in separated poses in the arena, run until a full circuit is
 completed, and are observed with the same controller and configuration. We
@@ -307,18 +309,19 @@ state), and bumper contacts. The offline regression suite exercises safety
 priority, marker classification, LiDAR geometry and corner recovery with
 synthetic snapshots; it does not replace a Webots physics trial.
 
-The protocol is repeatable but not yet statistically complete. The seeded
-script \texttt{tools/randomize\_starts.py} samples five positions within
-$\pm\SI{2.6}{\metre}$, enforces a minimum pairwise gap of \SI{2}{\metre},
-and samples headings uniformly from $[0,2\pi)$; the same seed reproduces a
-layout. For a valid comparison, the same seed is used across controller
-variants and different seeds are used across repetitions. No noise or random
-sensor dropout is added, although contact recovery includes a random
-\SIrange{0}{1}{\second} restart delay. This protocol was not executed for
-the present paper: only one obstacle-world run has been timed, so the
-reported \SI{165}{\second} is descriptive, not a mean or claim of
-generality. Webots pose traces were not saved, so no trajectory plot or
-current-run occupancy statistics are fabricated.
+Randomization uses two seeded tools. \texttt{tools/generate\_random\_world.py}
+randomizes all five starting poses and places zero to five collision-free
+obstacles per seed; it is the tool used here, and the controller was run on
+several such worlds (Section~\ref{sec:results}).
+\texttt{tools/randomize\_starts.py} instead reseeds only the poses, within
+$\pm\SI{2.6}{\metre}$ and a \SI{2}{\metre} minimum pairwise gap, headings
+uniform on $[0,2\pi)$, holding the world fixed so controller variants meet
+identical layouts. No noise or sensor dropout is added, though contact
+recovery includes a random \SIrange{0}{1}{\second} restart delay. The
+remaining gap is instrumentation, not randomization: those runs were
+observed but not logged, and only one was timed, so the reported
+\SI{165}{\second} is a single observation, not a mean. Pose traces were not
+saved, so no trajectory plot or per-run occupancy is reported.
 
 \section{Results}
 \label{sec:results}
@@ -394,11 +397,8 @@ flow and graceful rule-level safety; the main limitations are the single-run
 benchmark, absent artificial noise, frontal-only sensing and no quantitative
 success rate over random seeds.
 
-Beyond this timed circuit, the controller was also exercised on several
-arenas from \texttt{tools/generate\_random\_world.py}, which randomizes all
-five starting poses and zero to five obstacles per seed in the same
-\SI{12}{\metre}$\times$\SI{12}{\metre} arena. In every run observed the five
-robots eventually formed a single chain; the same mechanisms discussed in
+Across the randomized worlds of Section~\ref{sec:method}, the five robots
+eventually formed a single chain in every run observed; the mechanisms in
 Section~\ref{sec:limitations} --- bistable edge-of-view detection and
 open-loop corner or wall behaviour --- were what delayed convergence. This
 is a qualitative, non-tabulated observation, not a statistical batch.
