@@ -291,6 +291,25 @@ $\times$\SI{0.50}{\metre} box at (2.45,2.00), a radius-\SI{0.34}{\metre},
 \SI{0.44}{\metre}-high cylinder at (2.30,-2.20), and a
 \SI{1.35}{\metre}$\times$\SI{0.45}{\metre}$\times$\SI{0.36}{\metre} barrier
 at (-2.45,-2.10), in metres.
+
+\begin{figure}[t]
+\centering
+\begin{minipage}{0.48\columnwidth}
+\centering
+\includegraphics[width=\linewidth]{../docs/arena_setup.png}\\(a)
+\end{minipage}
+\hfill
+\begin{minipage}{0.48\columnwidth}
+\centering
+\includegraphics[width=\linewidth]{../docs/train_formed.png}\\(b)
+\end{minipage}
+\caption{(a) Starting configuration in \texttt{big\_four\_obstacles.wbt}:
+five robots in separated poses around the four static obstacles. (b) The
+same five robots after forming a single following train.}
+\label{fig:setup}
+\end{figure}
+
+Figure~\ref{fig:setup}(a) shows this starting configuration.
 We
 record circuit completion time, per-robot following duration, mean absolute
 bearing error while following, target losses (transitions out of a following
@@ -367,7 +386,8 @@ the remaining \SI{105}{\second} with no logged avoidance event. The end state
 was the intended one --- R3 leading on its
 base curve, R1, R2, R4 and R5 following --- which is why R3's low following
 percentage is a success rather than a failure: the leader of a train is, by
-definition, not following anything.
+definition, not following anything. Figure~\ref{fig:setup}(b) shows the five
+robots after the train has formed.
 
 The unweighted mean of the five per-robot bearing errors is
 \SI{0.586}{\radian}; weighting by each robot's following time gives
@@ -401,6 +421,18 @@ boundary easy to cross. The deployed controller unifies these cases: it turns
 clockwise without advancing, reverses only when local clearance permits, and
 uses a $\pm45^\circ$ obstacle cone. This removes left/right chatter but leaves
 open-loop corner behaviour.
+
+Concretely: the rotation stops as soon as the forward cone reads clear, which
+is often when the robot ends up heading \emph{parallel} to the wall rather
+than away from it. Whichever rule fires next --- typically
+\texttt{BASE\_CURVE} with its own fixed $\omega_{\rm base}$ --- then drives
+off with no knowledge of why the rotation happened. If that fixed curve
+points back toward the same wall, the robot does not separate cleanly: it
+grazes along the wall, repeatedly re-entering and re-exiting the escape. The
+escape and the base curve are independent, stateless rules by design, so
+neither can take the other's exit heading into account; fixing this would
+require passing that heading forward, which is exactly the kind of state the
+assignment's instantaneous-snapshot constraint is meant to avoid.
 
 \subsection{Bistable detection at the edge of the field of view}
 A target sitting near $\pm50^\circ$ is alternately inside and outside the
